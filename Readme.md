@@ -6,6 +6,7 @@ It allows you to adjust the pitch and playback rate of media files.
 Currently works for BeyondPod on my Galaxy S3 running CM 10.1.  No other app/device combinations have been tested.
 
 ## Download
+[APK Download](http://example.net/) <br>
 ![QR code](https://raw.github.com/TheRealFalcon/Prestissimo/master/qrcode.png)
 
 ## Current limitations/issues
