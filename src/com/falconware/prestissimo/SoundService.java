@@ -72,6 +72,9 @@ public class SoundService extends Service {
 	private final static int STATE_END = 8;
 	private final static int STATE_ERROR = 9;
 
+	private final static String TAG_SERVICE = "PrestissimoService";
+	private final static String TAG_API = "PrestissimoAPI";
+
 	private IOnErrorListenerCallback_0_8 errorCallback;
 	private IOnCompletionListenerCallback_0_8 completionCallback;
 	private IOnBufferingUpdateListenerCallback_0_8 bufferingUpdateCallback;
@@ -84,6 +87,7 @@ public class SoundService extends Service {
 	@Override
 	public void onCreate() {
 		super.onCreate();
+		Log.d(TAG_SERVICE, "Service created.  Starting in IDLE_MODE");
 		mCurrentState = STATE_IDLE;
 		mCurrentSpeed = (float) 1.0;
 		mCurrentPitch = (float) 1.0;
@@ -91,6 +95,7 @@ public class SoundService extends Service {
 
 	@Override
 	public IBinder onBind(Intent intent) {
+		Log.d(TAG_SERVICE, "Returning binder");
 		return mBinder;
 	}
 
@@ -124,12 +129,12 @@ public class SoundService extends Service {
 		int channelCount = mFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
 		mDuration = mFormat.getLong(MediaFormat.KEY_DURATION);
 
-		Log.d("initStream", "Sample rate: " + sampleRate);
+		Log.v(TAG_SERVICE, "Sample rate: " + sampleRate);
 		initDevice(sampleRate, channelCount);
 
 		mExtractor.selectTrack(TRACK_NUM);
 		String mime = mFormat.getString(MediaFormat.KEY_MIME);
-		Log.d("decode", "Mime type: " + mime);
+		Log.v(TAG_SERVICE, "Mime type: " + mime);
 		mCodec = MediaCodec.createDecoderByType(mime);
 
 		mCodec.configure(mFormat, null, null, 0);
@@ -225,8 +230,18 @@ public class SoundService extends Service {
 					} while (res == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED
 							|| res == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED);
 				}
+				Log.d(TAG_SERVICE,
+						"Decoding loop exited. Stopping codec and track");
+				Log.d(TAG_SERVICE, "Duration: " + (int) (mDuration / 1000));
+				Log.d(TAG_SERVICE,
+						"Current position: "
+								+ (int) (mExtractor.getSampleTime() / 1000));
 				mCodec.stop();
 				mTrack.stop();
+				Log.d(TAG_SERVICE, "Stopped codec and track");
+				Log.d(TAG_SERVICE,
+						"Current position: "
+								+ (int) (mExtractor.getSampleTime() / 1000));
 				if (sawInputEOS && sawOutputEOS) {
 					mCurrentState = STATE_PLAYBACK_COMPLETED;
 					if (completionCallback != null) {
@@ -242,6 +257,11 @@ public class SoundService extends Service {
 							}
 						}
 					}
+				} else {
+					Log.d(TAG_SERVICE,
+							"Loop ended before saw input eos or output eos");
+					Log.d(TAG_SERVICE, "sawInputEOS: " + sawInputEOS);
+					Log.d(TAG_SERVICE, "sawOutputEOS: " + sawOutputEOS);
 				}
 			}
 		});
@@ -304,7 +324,7 @@ public class SoundService extends Service {
 
 		@Override
 		public float getMinSpeedMultiplier(long sessionId) {
-			return (float) 0.6;
+			return (float) 0.5;
 		}
 
 		@Override
@@ -337,11 +357,13 @@ public class SoundService extends Service {
 
 		@Override
 		public void pause(long sessionId) {
+			Log.d(TAG_API, "pause called");
 			switch (mCurrentState) {
 			case STATE_STARTED:
 			case STATE_PAUSED:
 				mTrack.pause();
 				mCurrentState = STATE_PAUSED;
+				Log.d(TAG_API, "State changed to STATE_PAUSED");
 				break;
 			default:
 				error();
@@ -351,11 +373,13 @@ public class SoundService extends Service {
 
 		@Override
 		public void prepare(long sessionId) {
+			Log.d(TAG_API, "prepare called");
 			switch (mCurrentState) {
 			case STATE_INITIALIZED:
 			case STATE_STOPPED:
 				initStream();
 				mCurrentState = STATE_PREPARED;
+				Log.d(TAG_API, "State changed to STATE_PREPARED");
 				try {
 					preparedCallback.onPrepared();
 				} catch (RemoteException e) {
@@ -372,6 +396,7 @@ public class SoundService extends Service {
 		@Override
 		public void prepareAsync(long sessionId) {
 			// Not supported yet
+			Log.d(TAG_API, "prepareAsync called but not supported!");
 			error();
 		}
 
@@ -427,6 +452,7 @@ public class SoundService extends Service {
 
 		@Override
 		public void release(long sessionId) {
+			Log.d(TAG_API, "release called");
 			reset(sessionId);
 			errorCallback = null;
 			completionCallback = null;
@@ -437,12 +463,15 @@ public class SoundService extends Service {
 			seekCompleteCallback = null;
 			speedAdjustmentAvailableChangedCallback = null;
 			mCurrentState = STATE_END;
+			Log.d(TAG_API, "State changed to STATE_END");
 			// Goodbye cruel world
 		}
 
 		@Override
 		public void reset(long sessionId) {
+			Log.d(TAG_API, "reset called");
 			mCurrentState = STATE_IDLE;
+			Log.d(TAG_API, "State changed to STATE_IDLE");
 			if (mDecoderThread != null) {
 				try {
 					mDecoderThread.interrupt();
@@ -467,11 +496,12 @@ public class SoundService extends Service {
 				mTrack = null;
 			}
 			mFormat = null;
-
+			Log.d(TAG_API, "End of reset");
 		}
 
 		@Override
 		public void seekTo(long sessionId, final int msec) {
+			Log.d(TAG_API, "seekTo called");
 			switch (mCurrentState) {
 			case STATE_PREPARED:
 			case STATE_STARTED:
@@ -569,21 +599,25 @@ public class SoundService extends Service {
 
 		@Override
 		public void start(long sessionId) {
+			Log.d(TAG_API, "start called");
 			switch (mCurrentState) {
 			case STATE_PREPARED:
 			case STATE_PLAYBACK_COMPLETED:
 				mCurrentState = STATE_STARTED;
+				Log.d(TAG_API, "State changed to STATE_STARTED");
 				decode();
 				mTrack.play();
 			case STATE_STARTED:
 				break;
 			case STATE_PAUSED:
 				mCurrentState = STATE_STARTED;
+				Log.d(TAG_API, "State changed to STATE_PAUSED");
 				mDecoderThread.interrupt();
 				mTrack.play();
 				break;
 			default:
 				mCurrentState = STATE_ERROR;
+				Log.d(TAG_API, "State changed to STATE_ERROR in start");
 				if (mTrack != null) {
 					error();
 				} else {
@@ -606,6 +640,7 @@ public class SoundService extends Service {
 
 		@Override
 		public void stop(long sessionId) {
+			Log.d(TAG_API, "stop called");
 			switch (mCurrentState) {
 			case STATE_PREPARED:
 			case STATE_STARTED:
@@ -613,6 +648,7 @@ public class SoundService extends Service {
 			case STATE_PAUSED:
 			case STATE_PLAYBACK_COMPLETED:
 				mCurrentState = STATE_STOPPED;
+				Log.d(TAG_API, "State changed to STATE_STOPPED");
 				mTrack.pause();
 				mTrack.flush();
 				break;
@@ -683,6 +719,7 @@ public class SoundService extends Service {
 
 		private void error() {
 			mCurrentState = STATE_ERROR;
+			Log.d(TAG_API, "State changed to STATE_ERROR");
 			try {
 				if (errorCallback != null) {
 					boolean handled = errorCallback.onError(
