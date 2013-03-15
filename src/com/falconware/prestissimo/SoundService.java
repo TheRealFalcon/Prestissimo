@@ -14,23 +14,13 @@
 
 package com.falconware.prestissimo;
 
-import java.nio.ByteBuffer;
-
-import org.vinuxproject.sonic.Sonic;
-
 import android.app.Service;
 import android.content.Intent;
-import android.media.AudioFormat;
-import android.media.AudioManager;
-import android.media.AudioTrack;
-import android.media.MediaCodec;
-import android.media.MediaExtractor;
-import android.media.MediaFormat;
-import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.IBinder;
 import android.os.RemoteException;
 import android.util.Log;
+import android.util.SparseArray;
 
 import com.aocate.presto.service.IDeathCallback_0_8;
 import com.aocate.presto.service.IOnBufferingUpdateListenerCallback_0_8;
@@ -44,53 +34,25 @@ import com.aocate.presto.service.IOnSpeedAdjustmentAvailableChangedListenerCallb
 import com.aocate.presto.service.IPlayMedia_0_8;
 
 public class SoundService extends Service {
-	private AudioTrack mTrack;
-	private Sonic mSonic;
-	private MediaExtractor mExtractor;
-	private MediaFormat mFormat;
-	private MediaCodec mCodec;
-	private String mPath;
-	private int mCurrentState;
-	private static boolean startSessionCalled = false;
-	private Thread mDecoderThread;
+	// TODO: Cleanup...most of the interface implementation should move into the
+	// Track class
+	// TODO: If we receive a remote exception thats handled in the Track class,
+	// we'll never remove the
+	// 'garbage' reference from our mTracks array. Shouldn't be a problem as
+	// there'd have to be A LOT
+	// of failures before this is ever really an issue...but should probably fix
 
-	private long mDuration;
-	private float mCurrentSpeed;
-	private float mCurrentPitch;
-	private final static int TRACK_NUM = 0;
-	// Currently only supporting one instance
-	private final static int GLOBAL_SESSION_ID = 1;
-
-	private final static int STATE_IDLE = 0;
-	private final static int STATE_INITIALIZED = 1;
-	private final static int STATE_PREPARING = 2;
-	private final static int STATE_PREPARED = 3;
-	private final static int STATE_STARTED = 4;
-	private final static int STATE_PAUSED = 5;
-	private final static int STATE_STOPPED = 6;
-	private final static int STATE_PLAYBACK_COMPLETED = 7;
-	private final static int STATE_END = 8;
-	private final static int STATE_ERROR = 9;
+	private SparseArray<Track> mTracks;
+	private static int trackId = 0;
 
 	private final static String TAG_SERVICE = "PrestissimoService";
-	private final static String TAG_API = "PrestissimoAPI";
-
-	private IOnErrorListenerCallback_0_8 errorCallback;
-	private IOnCompletionListenerCallback_0_8 completionCallback;
-	private IOnBufferingUpdateListenerCallback_0_8 bufferingUpdateCallback;
-	private IOnInfoListenerCallback_0_8 infoCallback;
-	private IOnPitchAdjustmentAvailableChangedListenerCallback_0_8 pitchAdjustmentAvailableChangedCallback;
-	private IOnPreparedListenerCallback_0_8 preparedCallback;
-	private IOnSeekCompleteListenerCallback_0_8 seekCompleteCallback;
-	private IOnSpeedAdjustmentAvailableChangedListenerCallback_0_8 speedAdjustmentAvailableChangedCallback;
+	protected final static String TAG_API = "PrestissimoAPI";
 
 	@Override
 	public void onCreate() {
 		super.onCreate();
-		Log.d(TAG_SERVICE, "Service created.  Starting in IDLE_MODE");
-		mCurrentState = STATE_IDLE;
-		mCurrentSpeed = (float) 1.0;
-		mCurrentPitch = (float) 1.0;
+		Log.d(TAG_SERVICE, "Service created");
+		mTracks = new SparseArray<Track>();
 	}
 
 	@Override
@@ -99,174 +61,32 @@ public class SoundService extends Service {
 		return mBinder;
 	}
 
-	private int findFormatFromChannels(int numChannels) {
-		switch (numChannels) {
-		case 1:
-			return AudioFormat.CHANNEL_OUT_MONO;
-		case 2:
-			return AudioFormat.CHANNEL_OUT_STEREO;
-		default:
-			return -1; // Error
-		}
-	}
+	// private final Track.KillMe killer = new Track.KillMe() {
+	// // Fire it off in another thread so the 'current' thread doesn't try to
+	// // interrupt/join itself.
+	// @Override
+	// public void die(final int sessionId) {
+	// Thread t = new Thread(new Runnable() {
+	// @Override
+	// public void run() {
+	// Track track = mTracks.get(sessionId);
+	// track.release();
+	// mTracks.delete(sessionId);
+	// }
+	// });
+	// t.setDaemon(true);
+	// t.start();
+	// }
+	// };
 
-	private void initDevice(int sampleRate, int numChannels) {
-		int format = findFormatFromChannels(numChannels);
-		int minSize = AudioTrack.getMinBufferSize(sampleRate, format,
-				AudioFormat.ENCODING_PCM_16BIT);
-		mTrack = new AudioTrack(AudioManager.STREAM_MUSIC, sampleRate, format,
-				AudioFormat.ENCODING_PCM_16BIT, minSize * 4,
-				AudioTrack.MODE_STREAM);
-		mSonic = new Sonic(sampleRate, numChannels);
-	}
+	// Indicates client has crashed. Stop the track and release any resources
+	// associated with it
+	private void handleRemoteException(long lSessionId) {
+		int sessionId = (int) lSessionId;
+		Track track = mTracks.get(sessionId);
+		track.release();
+		mTracks.delete(sessionId);
 
-	private void initStream() {
-		mExtractor = new MediaExtractor();
-		mExtractor.setDataSource(mPath);
-		mFormat = mExtractor.getTrackFormat(TRACK_NUM);
-
-		int sampleRate = mFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE);
-		int channelCount = mFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
-		mDuration = mFormat.getLong(MediaFormat.KEY_DURATION);
-
-		Log.v(TAG_SERVICE, "Sample rate: " + sampleRate);
-		initDevice(sampleRate, channelCount);
-
-		mExtractor.selectTrack(TRACK_NUM);
-		String mime = mFormat.getString(MediaFormat.KEY_MIME);
-		Log.v(TAG_SERVICE, "Mime type: " + mime);
-		mCodec = MediaCodec.createDecoderByType(mime);
-
-		mCodec.configure(mFormat, null, null, 0);
-	}
-
-	private void decode() {
-		mDecoderThread = new Thread(new Runnable() {
-			@Override
-			public void run() {
-				mCodec.start();
-
-				ByteBuffer[] inputBuffers = mCodec.getInputBuffers();
-				ByteBuffer[] outputBuffers = mCodec.getOutputBuffers();
-
-				boolean sawInputEOS = false;
-				boolean sawOutputEOS = false;
-
-				while (!sawInputEOS
-						&& !sawOutputEOS
-						&& (mCurrentState == STATE_STARTED || mCurrentState == STATE_PAUSED)) {
-					if (mCurrentState == STATE_PAUSED) {
-						try {
-							Thread.sleep(99999999);
-						} catch (InterruptedException e) {
-							// Purposely not doing anything here
-						}
-						continue;
-					}
-					mSonic.setSpeed(mCurrentSpeed);
-					mSonic.setPitch(mCurrentPitch);
-					int inputBufIndex = mCodec.dequeueInputBuffer(-1);
-					if (inputBufIndex >= 0) {
-						ByteBuffer dstBuf = inputBuffers[inputBufIndex];
-						int sampleSize = mExtractor.readSampleData(dstBuf, 0);
-						long presentationTimeUs = 0;
-						if (sampleSize < 0) {
-							sawInputEOS = true;
-							sampleSize = 0;
-						} else {
-							presentationTimeUs = mExtractor.getSampleTime();
-						}
-						mCodec.queueInputBuffer(
-								inputBufIndex,
-								0,
-								sampleSize,
-								presentationTimeUs,
-								sawInputEOS ? MediaCodec.BUFFER_FLAG_END_OF_STREAM
-										: 0);
-						if (!sawInputEOS) {
-							mExtractor.advance();
-						}
-					}
-
-					MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
-					int res;
-					do {
-						res = mCodec.dequeueOutputBuffer(info, -1);
-						if (res >= 0) {
-							int outputBufIndex = res;
-							ByteBuffer buf = outputBuffers[outputBufIndex];
-
-							final byte[] chunk = new byte[info.size];
-							buf.get(chunk);
-							buf.clear();
-
-							if (chunk.length > 0) {
-								mSonic.putBytes(chunk, chunk.length);
-								int available = mSonic.availableBytes();
-								if (available > 0) {
-									final byte[] modifiedSamples = new byte[available];
-									mSonic.receiveBytes(modifiedSamples,
-											available);
-									mTrack.write(modifiedSamples, 0, available);
-								}
-							} else {
-								mSonic.flush();
-							}
-							mCodec.releaseOutputBuffer(outputBufIndex, false);
-
-							if ((info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
-								sawOutputEOS = true;
-							}
-						} else if (res == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED) {
-							outputBuffers = mCodec.getOutputBuffers();
-							Log.d("PCM", "Output buffers changed");
-						} else if (res == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-							final MediaFormat oformat = mCodec
-									.getOutputFormat();
-							Log.d("PCM", "Output format has changed to"
-									+ oformat);
-							outputBuffers = mCodec.getOutputBuffers();
-						}
-					} while (res == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED
-							|| res == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED);
-				}
-				Log.d(TAG_SERVICE,
-						"Decoding loop exited. Stopping codec and track");
-				Log.d(TAG_SERVICE, "Duration: " + (int) (mDuration / 1000));
-				Log.d(TAG_SERVICE,
-						"Current position: "
-								+ (int) (mExtractor.getSampleTime() / 1000));
-				mCodec.stop();
-				mTrack.stop();
-				Log.d(TAG_SERVICE, "Stopped codec and track");
-				Log.d(TAG_SERVICE,
-						"Current position: "
-								+ (int) (mExtractor.getSampleTime() / 1000));
-				if (sawInputEOS && sawOutputEOS) {
-					mCurrentState = STATE_PLAYBACK_COMPLETED;
-					if (completionCallback != null) {
-						try {
-							completionCallback.onCompletion();
-						} catch (RemoteException e) {
-							e.printStackTrace();
-							try {
-								// I could keep doing this for a LOOOOOONG time
-								mBinder.release(GLOBAL_SESSION_ID);
-							} catch (RemoteException ee) {
-								ee.printStackTrace();
-							}
-						}
-					}
-				} else {
-					Log.d(TAG_SERVICE,
-							"Loop ended before saw input eos or output eos");
-					Log.d(TAG_SERVICE, "sawInputEOS: " + sawInputEOS);
-					Log.d(TAG_SERVICE, "sawOutputEOS: " + sawOutputEOS);
-				}
-			}
-		});
-		mDecoderThread.setDaemon(true);
-		mDecoderThread.start();
 	}
 
 	private final IPlayMedia_0_8.Stub mBinder = new IPlayMedia_0_8.Stub() {
@@ -283,36 +103,40 @@ public class SoundService extends Service {
 
 		@Override
 		public float getCurrentPitchStepsAdjustment(long sessionId) {
-			return mCurrentPitch;
+			Track track = mTracks.get((int) sessionId);
+			return track.mCurrentPitch;
 		}
 
 		@Override
 		public int getCurrentPosition(long sessionId) {
-			switch (mCurrentState) {
-			case STATE_ERROR:
-				error();
+			Track track = mTracks.get((int) sessionId);
+			switch (track.mCurrentState) {
+			case Track.STATE_ERROR:
+				track.error();
 				break;
 			default:
-				return (int) (mExtractor.getSampleTime() / 1000);
+				return track.getCurrentPosition();
 			}
 			return -1;
 		}
 
 		@Override
 		public float getCurrentSpeedMultiplier(long sessionId) {
-			return mCurrentSpeed;
+			Track track = mTracks.get((int) sessionId);
+			return track.mCurrentSpeed;
 		}
 
 		@Override
 		public int getDuration(long sessionId) {
-			switch (mCurrentState) {
-			case STATE_INITIALIZED:
-			case STATE_IDLE:
-			case STATE_ERROR:
-				error();
+			Track track = mTracks.get((int) sessionId);
+			switch (track.mCurrentState) {
+			case Track.STATE_INITIALIZED:
+			case Track.STATE_IDLE:
+			case Track.STATE_ERROR:
+				track.error();
 				break;
 			default:
-				return (int) (mDuration / 1000);
+				return (int) (track.mDuration / 1000);
 			}
 			return -1;
 		}
@@ -345,50 +169,54 @@ public class SoundService extends Service {
 
 		@Override
 		public boolean isPlaying(long sessionId) {
-			switch (mCurrentState) {
-			case STATE_ERROR:
-				error();
+			Track track = mTracks.get((int) sessionId);
+			switch (track.mCurrentState) {
+			case Track.STATE_ERROR:
+				track.error();
 				break;
 			default:
-				return mCurrentState == STATE_STARTED;
+				return track.mCurrentState == Track.STATE_STARTED;
 			}
 			return false;
 		}
 
 		@Override
 		public void pause(long sessionId) {
-			Log.d(TAG_API, "pause called");
-			switch (mCurrentState) {
-			case STATE_STARTED:
-			case STATE_PAUSED:
-				mTrack.pause();
-				mCurrentState = STATE_PAUSED;
-				Log.d(TAG_API, "State changed to STATE_PAUSED");
+			Log.d(TAG_API, "Session: " + sessionId + ". Pause called");
+			Track track = mTracks.get((int) sessionId);
+			switch (track.mCurrentState) {
+			case Track.STATE_STARTED:
+			case Track.STATE_PAUSED:
+				track.pause();
+				track.mCurrentState = Track.STATE_PAUSED;
+				Log.d(TAG_API, "State changed to Track.STATE_PAUSED");
 				break;
 			default:
-				error();
+				track.error();
 			}
 
 		}
 
 		@Override
 		public void prepare(long sessionId) {
-			Log.d(TAG_API, "prepare called");
-			switch (mCurrentState) {
-			case STATE_INITIALIZED:
-			case STATE_STOPPED:
-				initStream();
-				mCurrentState = STATE_PREPARED;
-				Log.d(TAG_API, "State changed to STATE_PREPARED");
+			Log.d(TAG_API, "Session: " + sessionId + ". Prepare called");
+			Track track = mTracks.get((int) sessionId);
+			switch (track.mCurrentState) {
+			case Track.STATE_INITIALIZED:
+			case Track.STATE_STOPPED:
+				track.initStream();
+				track.mCurrentState = Track.STATE_PREPARED;
+				Log.d(TAG_API, "Session: " + sessionId
+						+ ". State changed to Track.STATE_PREPARED");
 				try {
-					preparedCallback.onPrepared();
+					track.preparedCallback.onPrepared();
 				} catch (RemoteException e) {
 					e.printStackTrace();
-					release(GLOBAL_SESSION_ID);
+					release(sessionId);
 				}
 				break;
 			default:
-				error();
+				track.error();
 			}
 
 		}
@@ -396,137 +224,97 @@ public class SoundService extends Service {
 		@Override
 		public void prepareAsync(long sessionId) {
 			// Not supported yet
-			Log.d(TAG_API, "prepareAsync called but not supported!");
-			error();
+			Track track = mTracks.get((int) sessionId);
+			Log.d(TAG_API, "Session: " + sessionId
+					+ ". PrepareAsync called but not supported!");
+			track.error();
 		}
 
 		@Override
 		public void registerOnBufferingUpdateCallback(long sessionId,
 				IOnBufferingUpdateListenerCallback_0_8 cb) {
-			bufferingUpdateCallback = cb;
+			Track track = mTracks.get((int) sessionId);
+			track.bufferingUpdateCallback = cb;
 		}
 
 		@Override
 		public void registerOnCompletionCallback(long sessionId,
 				IOnCompletionListenerCallback_0_8 cb) {
-			completionCallback = cb;
+			Track track = mTracks.get((int) sessionId);
+			track.completionCallback = cb;
 		}
 
 		@Override
 		public void registerOnErrorCallback(long sessionId,
 				IOnErrorListenerCallback_0_8 cb) {
-			errorCallback = cb;
+			Track track = mTracks.get((int) sessionId);
+			track.errorCallback = cb;
 		}
 
 		@Override
 		public void registerOnInfoCallback(long sessionId,
 				IOnInfoListenerCallback_0_8 cb) {
-			infoCallback = cb;
+			Track track = mTracks.get((int) sessionId);
+			track.infoCallback = cb;
 		}
 
 		@Override
 		public void registerOnPitchAdjustmentAvailableChangedCallback(
 				long sessionId,
 				IOnPitchAdjustmentAvailableChangedListenerCallback_0_8 cb) {
-			pitchAdjustmentAvailableChangedCallback = cb;
+			Track track = mTracks.get((int) sessionId);
+			track.pitchAdjustmentAvailableChangedCallback = cb;
 		}
 
 		@Override
 		public void registerOnPreparedCallback(long sessionId,
 				IOnPreparedListenerCallback_0_8 cb) {
-			preparedCallback = cb;
+			Track track = mTracks.get((int) sessionId);
+			track.preparedCallback = cb;
 		}
 
 		@Override
 		public void registerOnSeekCompleteCallback(long sessionId,
 				IOnSeekCompleteListenerCallback_0_8 cb) {
-			seekCompleteCallback = cb;
+			Track track = mTracks.get((int) sessionId);
+			track.seekCompleteCallback = cb;
 		}
 
 		@Override
 		public void registerOnSpeedAdjustmentAvailableChangedCallback(
 				long sessionId,
 				IOnSpeedAdjustmentAvailableChangedListenerCallback_0_8 cb) {
-			speedAdjustmentAvailableChangedCallback = cb;
+			Track track = mTracks.get((int) sessionId);
+			track.speedAdjustmentAvailableChangedCallback = cb;
 		}
 
 		@Override
 		public void release(long sessionId) {
-			Log.d(TAG_API, "release called");
-			reset(sessionId);
-			errorCallback = null;
-			completionCallback = null;
-			bufferingUpdateCallback = null;
-			infoCallback = null;
-			pitchAdjustmentAvailableChangedCallback = null;
-			preparedCallback = null;
-			seekCompleteCallback = null;
-			speedAdjustmentAvailableChangedCallback = null;
-			mCurrentState = STATE_END;
-			Log.d(TAG_API, "State changed to STATE_END");
-			// Goodbye cruel world
+			Log.d(TAG_API, "Session: " + sessionId + ". Release called");
+			Track track = mTracks.get((int) sessionId);
+			track.release();
+			mTracks.delete((int) sessionId);
+			Log.d(TAG_API, "Session: " + sessionId
+					+ ". State changed to Track.STATE_END");
 		}
 
 		@Override
 		public void reset(long sessionId) {
-			Log.d(TAG_API, "reset called");
-			mCurrentState = STATE_IDLE;
-			Log.d(TAG_API, "State changed to STATE_IDLE");
-			if (mDecoderThread != null) {
-				try {
-					mDecoderThread.interrupt();
-					mDecoderThread.join();
-				} catch (InterruptedException e) {
-					// Bail and go to error state
-					e.printStackTrace();
-					error();
-					return;
-				}
-			}
-			if (mCodec != null) {
-				mCodec.release();
-				mCodec = null;
-			}
-			if (mExtractor != null) {
-				mExtractor.release();
-				mExtractor = null;
-			}
-			if (mTrack != null) {
-				mTrack.release();
-				mTrack = null;
-			}
-			mFormat = null;
-			Log.d(TAG_API, "End of reset");
+			Log.d(TAG_API, "Session: " + sessionId + ". Reset called");
+			Track track = mTracks.get((int) sessionId);
+			track.reset();
+			track.mCurrentState = Track.STATE_IDLE;
+			Log.d(TAG_API, "Session: " + sessionId
+					+ ". State changed to Track.STATE_IDLE");
+			Log.d(TAG_API, "Session: " + sessionId + ". End of reset");
 		}
 
 		@Override
 		public void seekTo(long sessionId, final int msec) {
-			Log.d(TAG_API, "seekTo called");
-			switch (mCurrentState) {
-			case STATE_PREPARED:
-			case STATE_STARTED:
-			case STATE_PAUSED:
-			case STATE_PLAYBACK_COMPLETED:
-				Thread t = new Thread(new Runnable() {
-					@Override
-					public void run() {
-						mTrack.flush();
-						mExtractor.seekTo(((long) msec * 1000),
-								MediaExtractor.SEEK_TO_CLOSEST_SYNC);
-						try {
-							seekCompleteCallback.onSeekComplete();
-						} catch (RemoteException e) {
-							e.printStackTrace();
-							release(GLOBAL_SESSION_ID);
-						}
-					}
-				});
-				t.setDaemon(true);
-				t.start();
-				break;
-			default:
-				error();
-			}
+			Log.d(TAG_API, "Session: " + sessionId + ". SeekTo called");
+			Track track = mTracks.get((int) sessionId);
+			track.seekTo(msec);
+			Log.d(TAG_API, "Session: " + sessionId + ". SeekTo done");
 
 		}
 
@@ -537,22 +325,30 @@ public class SoundService extends Service {
 
 		@Override
 		public void setDataSourceString(long sessionId, String path) {
-			switch (mCurrentState) {
-			case STATE_IDLE:
-				mPath = path;
-				mCurrentState = STATE_INITIALIZED;
+			Log.d(TAG_API, "Session: " + sessionId
+					+ ". SetDataSourceString called");
+			Track track = mTracks.get((int) sessionId);
+			switch (track.mCurrentState) {
+			case Track.STATE_IDLE:
+				track.mPath = path;
+				track.mCurrentState = Track.STATE_INITIALIZED;
+				Log.d(TAG_API, "Session: " + sessionId
+						+ ". Moving state to STATE_INITIALIZED");
 				break;
 			default:
-				error();
+				track.error();
 			}
 
 		}
 
 		@Override
 		public void setDataSourceUri(long sessionId, Uri uri) {
-			System.out
-					.println("Attempting to set DataSourceUri which is not supported!");
-			error();
+			Track track = mTracks.get((int) sessionId);
+			Log.e(TAG_API,
+					"Session: "
+							+ sessionId
+							+ ". Attempting to set DataSourceUri which is not supported!");
+			track.error();
 		}
 
 		@Override
@@ -573,12 +369,14 @@ public class SoundService extends Service {
 
 		@Override
 		public void setPlaybackPitch(long sessionId, float f) {
-			mCurrentPitch = f;
+			Track track = mTracks.get((int) sessionId);
+			track.mCurrentPitch = f;
 		}
 
 		@Override
 		public void setPlaybackSpeed(long sessionId, float f) {
-			mCurrentSpeed = f;
+			Track track = mTracks.get((int) sessionId);
+			track.mCurrentSpeed = f;
 		}
 
 		@Override
@@ -588,9 +386,10 @@ public class SoundService extends Service {
 
 		@Override
 		public void setVolume(long sessionId, float left, float right) {
-			switch (mCurrentState) {
-			case STATE_ERROR:
-				error();
+			Track track = mTracks.get((int) sessionId);
+			switch (track.mCurrentState) {
+			case Track.STATE_ERROR:
+				track.error();
 				break;
 			default:
 				// No idea how this should work... :)
@@ -599,62 +398,57 @@ public class SoundService extends Service {
 
 		@Override
 		public void start(long sessionId) {
-			Log.d(TAG_API, "start called");
-			switch (mCurrentState) {
-			case STATE_PREPARED:
-			case STATE_PLAYBACK_COMPLETED:
-				mCurrentState = STATE_STARTED;
-				Log.d(TAG_API, "State changed to STATE_STARTED");
-				decode();
-				mTrack.play();
-			case STATE_STARTED:
-				break;
-			case STATE_PAUSED:
-				mCurrentState = STATE_STARTED;
-				Log.d(TAG_API, "State changed to STATE_PAUSED");
-				mDecoderThread.interrupt();
-				mTrack.play();
-				break;
-			default:
-				mCurrentState = STATE_ERROR;
-				Log.d(TAG_API, "State changed to STATE_ERROR in start");
-				if (mTrack != null) {
-					error();
-				} else {
-					Log.d("start",
-							"Attempting to start while in idle after construction.  Not allowed by no callbacks called");
-				}
-			}
+			Log.d(TAG_API, "Session: " + sessionId + ". Start called");
+			Track track = mTracks.get((int) sessionId);
+			track.start();
+			Log.d(TAG_API, "Session: " + sessionId + ". Start done");
 		}
 
 		@Override
 		public long startSession(IDeathCallback_0_8 cb) {
-			if (startSessionCalled) {
-				Log.e("startSession",
-						"Currently only single instance.  Don't call more than once");
-				// error();
+			Log.d(TAG_API, "Calling startSession");
+			final int sessionId = trackId++;
+			Log.d(TAG_API, "Registering new sessionId: " + sessionId);
+			try {
+				cb.asBinder().linkToDeath(new DeathRecipient() {
+					@Override
+					public void binderDied() {
+						Log.d(TAG_API, "Our caller is DEAD.  Releasing.");
+						handleRemoteException(sessionId);
+						return;
+					}
+				}, 0);
+			} catch (RemoteException e) {
+				e.printStackTrace();
+				Log.wtf(TAG_API,
+						"Service died when trying to set what to do when it dies.  Good luck!");
 			}
-			startSessionCalled = true;
-			return GLOBAL_SESSION_ID;
+			// It seems really strange to me to passing this callback to the
+			// track since it never actually gets called or used by the track.
+			// However, cb will be a candidate for garbage collection after this
+			// method pops unless we 'do' something with it.
+			mTracks.append(sessionId, new Track(cb));
+			return sessionId;
 		}
 
 		@Override
 		public void stop(long sessionId) {
-			Log.d(TAG_API, "stop called");
-			switch (mCurrentState) {
-			case STATE_PREPARED:
-			case STATE_STARTED:
-			case STATE_STOPPED:
-			case STATE_PAUSED:
-			case STATE_PLAYBACK_COMPLETED:
-				mCurrentState = STATE_STOPPED;
-				Log.d(TAG_API, "State changed to STATE_STOPPED");
-				mTrack.pause();
-				mTrack.flush();
+			Log.d(TAG_API, "Session: " + sessionId + ". Stop called");
+			Track track = mTracks.get((int) sessionId);
+			switch (track.mCurrentState) {
+			case Track.STATE_PREPARED:
+			case Track.STATE_STARTED:
+			case Track.STATE_STOPPED:
+			case Track.STATE_PAUSED:
+			case Track.STATE_PLAYBACK_COMPLETED:
+				track.mCurrentState = Track.STATE_STOPPED;
+				Log.d(TAG_API, "State changed to Track.STATE_STOPPED");
+				track.stop();
+				Log.d(TAG_API, "Session: " + sessionId + ". Stop done");
 				break;
 
 			default:
-				error();
+				track.error();
 			}
 		}
 
@@ -715,26 +509,6 @@ public class SoundService extends Service {
 				IOnSpeedAdjustmentAvailableChangedListenerCallback_0_8 cb) {
 			Log.e("SoundService",
 					"In unregisterOnSpeedAdjustmentAvailableChangedCallback. This should never happen!");
-		}
-
-		private void error() {
-			mCurrentState = STATE_ERROR;
-			Log.d(TAG_API, "State changed to STATE_ERROR");
-			try {
-				if (errorCallback != null) {
-					boolean handled = errorCallback.onError(
-							MediaPlayer.MEDIA_ERROR_UNKNOWN, 0);
-					if (!handled) {
-						completionCallback.onCompletion();
-					}
-				} else {
-					completionCallback.onCompletion();
-				}
-			} catch (RemoteException e) {
-				// Print stack trace and end your woeful life
-				e.printStackTrace();
-				release(GLOBAL_SESSION_ID);
-			}
 		}
 
 	};
