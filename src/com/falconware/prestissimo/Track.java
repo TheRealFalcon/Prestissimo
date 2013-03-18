@@ -31,15 +31,26 @@ public class Track {
 	private MediaFormat mFormat;
 	private MediaCodec mCodec;
 	private Thread mDecoderThread;
+	private String mPath;
 	private boolean mContinue;
+	private long mDuration;
+	private float mCurrentSpeed;
+	private float mCurrentPitch;
+	private int mCurrentState;
+
 	private final static int TRACK_NUM = 0;
 	private final static String TAG_TRACK = "PrestissimoTrack";
 
-	protected long mDuration;
-	protected float mCurrentSpeed;
-	protected float mCurrentPitch;
-	protected int mCurrentState;
-	protected String mPath;
+	private final static int STATE_IDLE = 0;
+	private final static int STATE_INITIALIZED = 1;
+	private final static int STATE_PREPARING = 2;
+	private final static int STATE_PREPARED = 3;
+	private final static int STATE_STARTED = 4;
+	private final static int STATE_PAUSED = 5;
+	private final static int STATE_STOPPED = 6;
+	private final static int STATE_PLAYBACK_COMPLETED = 7;
+	private final static int STATE_END = 8;
+	private final static int STATE_ERROR = 9;
 
 	protected IOnErrorListenerCallback_0_8 errorCallback;
 	protected IOnCompletionListenerCallback_0_8 completionCallback;
@@ -49,17 +60,6 @@ public class Track {
 	protected IOnPreparedListenerCallback_0_8 preparedCallback;
 	protected IOnSeekCompleteListenerCallback_0_8 seekCompleteCallback;
 	protected IOnSpeedAdjustmentAvailableChangedListenerCallback_0_8 speedAdjustmentAvailableChangedCallback;
-
-	public final static int STATE_IDLE = 0;
-	public final static int STATE_INITIALIZED = 1;
-	public final static int STATE_PREPARING = 2;
-	public final static int STATE_PREPARED = 3;
-	public final static int STATE_STARTED = 4;
-	public final static int STATE_PAUSED = 5;
-	public final static int STATE_STOPPED = 6;
-	public final static int STATE_PLAYBACK_COMPLETED = 7;
-	public final static int STATE_END = 8;
-	public final static int STATE_ERROR = 9;
 
 	// Don't know how to persist this other than pass it in and 'hold' it
 	private final IDeathCallback_0_8 mDeath;
@@ -72,18 +72,101 @@ public class Track {
 		mDeath = cb;
 	}
 
+	// TODO: This probably isn't right...
+	public float getCurrentPitchStepsAdjustment() {
+		return mCurrentPitch;
+	}
+
 	public int getCurrentPosition() {
-		return (int) (mExtractor.getSampleTime() / 1000);
+		switch (mCurrentState) {
+		case Track.STATE_ERROR:
+			error();
+			break;
+		default:
+			return (int) (mExtractor.getSampleTime() / 1000);
+		}
+		return 0;
+
+	}
+
+	public float getCurrentSpeed() {
+		return mCurrentSpeed;
+	}
+
+	public int getDuration() {
+		switch (mCurrentState) {
+		case Track.STATE_INITIALIZED:
+		case Track.STATE_IDLE:
+		case Track.STATE_ERROR:
+			error();
+			break;
+		default:
+			return (int) (mDuration / 1000);
+		}
+		return 0;
+	}
+
+	public boolean isPlaying() {
+		switch (mCurrentState) {
+		case Track.STATE_ERROR:
+			error();
+			break;
+		default:
+			return mCurrentState == Track.STATE_STARTED;
+		}
+		return false;
 	}
 
 	public void pause() {
-		mTrack.pause();
+		switch (mCurrentState) {
+		case Track.STATE_STARTED:
+		case Track.STATE_PAUSED:
+			mTrack.pause();
+			mCurrentState = Track.STATE_PAUSED;
+			Log.d(TAG_TRACK, "State changed to Track.STATE_PAUSED");
+			break;
+		default:
+			error();
+		}
+
+	}
+
+	public void prepare() {
+		switch (mCurrentState) {
+		case Track.STATE_INITIALIZED:
+		case Track.STATE_STOPPED:
+			initStream();
+			mCurrentState = Track.STATE_PREPARED;
+			Log.d(TAG_TRACK, "State changed to Track.STATE_PREPARED");
+			try {
+				preparedCallback.onPrepared();
+			} catch (RemoteException e) {
+				// Binder should handle our death
+			}
+			break;
+		default:
+			error();
+		}
 	}
 
 	public void stop() {
-		mContinue = false;
-		mTrack.pause();
-		mTrack.flush();
+		switch (mCurrentState) {
+		case Track.STATE_PREPARED:
+		case Track.STATE_STARTED:
+		case Track.STATE_STOPPED:
+		case Track.STATE_PAUSED:
+		case Track.STATE_PLAYBACK_COMPLETED:
+			mCurrentState = Track.STATE_STOPPED;
+			Log.d(TAG_TRACK, "State changed to Track.STATE_STOPPED");
+			mContinue = false;
+			mTrack.pause();
+			mTrack.flush();
+			break;
+
+		default:
+			error();
+		}
+
 	}
 
 	public void start() {
@@ -175,6 +258,9 @@ public class Track {
 		}
 		mFormat = null;
 
+		mCurrentState = Track.STATE_IDLE;
+		Log.d(TAG_TRACK, "State changed to Track.STATE_IDLE");
+
 	}
 
 	public void seekTo(final int msec) {
@@ -202,6 +288,26 @@ public class Track {
 		default:
 			error();
 		}
+	}
+
+	public void setDataSourceString(String path) {
+		switch (mCurrentState) {
+		case Track.STATE_IDLE:
+			mPath = path;
+			mCurrentState = Track.STATE_INITIALIZED;
+			Log.d(TAG_TRACK, "Moving state to STATE_INITIALIZED");
+			break;
+		default:
+			error();
+		}
+	}
+
+	public void setPlaybackPitch(float f) {
+		mCurrentPitch = f;
+	}
+
+	public void setPlaybackSpeed(float f) {
+		mCurrentSpeed = f;
 	}
 
 	public void error() {

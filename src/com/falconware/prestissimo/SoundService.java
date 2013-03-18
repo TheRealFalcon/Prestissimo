@@ -34,14 +34,6 @@ import com.aocate.presto.service.IOnSpeedAdjustmentAvailableChangedListenerCallb
 import com.aocate.presto.service.IPlayMedia_0_8;
 
 public class SoundService extends Service {
-	// TODO: Cleanup...most of the interface implementation should move into the
-	// Track class
-	// TODO: If we receive a remote exception thats handled in the Track class,
-	// we'll never remove the
-	// 'garbage' reference from our mTracks array. Shouldn't be a problem as
-	// there'd have to be A LOT
-	// of failures before this is ever really an issue...but should probably fix
-
 	private SparseArray<Track> mTracks;
 	private static int trackId = 0;
 
@@ -60,24 +52,6 @@ public class SoundService extends Service {
 		Log.d(TAG_SERVICE, "Returning binder");
 		return mBinder;
 	}
-
-	// private final Track.KillMe killer = new Track.KillMe() {
-	// // Fire it off in another thread so the 'current' thread doesn't try to
-	// // interrupt/join itself.
-	// @Override
-	// public void die(final int sessionId) {
-	// Thread t = new Thread(new Runnable() {
-	// @Override
-	// public void run() {
-	// Track track = mTracks.get(sessionId);
-	// track.release();
-	// mTracks.delete(sessionId);
-	// }
-	// });
-	// t.setDaemon(true);
-	// t.start();
-	// }
-	// };
 
 	// Indicates client has crashed. Stop the track and release any resources
 	// associated with it
@@ -104,41 +78,25 @@ public class SoundService extends Service {
 		@Override
 		public float getCurrentPitchStepsAdjustment(long sessionId) {
 			Track track = mTracks.get((int) sessionId);
-			return track.mCurrentPitch;
+			return track.getCurrentPitchStepsAdjustment();
 		}
 
 		@Override
 		public int getCurrentPosition(long sessionId) {
 			Track track = mTracks.get((int) sessionId);
-			switch (track.mCurrentState) {
-			case Track.STATE_ERROR:
-				track.error();
-				break;
-			default:
-				return track.getCurrentPosition();
-			}
-			return -1;
+			return track.getCurrentPosition();
 		}
 
 		@Override
 		public float getCurrentSpeedMultiplier(long sessionId) {
 			Track track = mTracks.get((int) sessionId);
-			return track.mCurrentSpeed;
+			return track.getCurrentSpeed();
 		}
 
 		@Override
 		public int getDuration(long sessionId) {
 			Track track = mTracks.get((int) sessionId);
-			switch (track.mCurrentState) {
-			case Track.STATE_INITIALIZED:
-			case Track.STATE_IDLE:
-			case Track.STATE_ERROR:
-				track.error();
-				break;
-			default:
-				return (int) (track.mDuration / 1000);
-			}
-			return -1;
+			return track.getDuration();
 		}
 
 		@Override
@@ -153,12 +111,12 @@ public class SoundService extends Service {
 
 		@Override
 		public int getVersionCode() {
-			return 1;
+			return -1;
 		}
 
 		@Override
 		public String getVersionName() {
-			return "0.1";
+			return "";
 		}
 
 		@Override
@@ -170,30 +128,14 @@ public class SoundService extends Service {
 		@Override
 		public boolean isPlaying(long sessionId) {
 			Track track = mTracks.get((int) sessionId);
-			switch (track.mCurrentState) {
-			case Track.STATE_ERROR:
-				track.error();
-				break;
-			default:
-				return track.mCurrentState == Track.STATE_STARTED;
-			}
-			return false;
+			return track.isPlaying();
 		}
 
 		@Override
 		public void pause(long sessionId) {
 			Log.d(TAG_API, "Session: " + sessionId + ". Pause called");
 			Track track = mTracks.get((int) sessionId);
-			switch (track.mCurrentState) {
-			case Track.STATE_STARTED:
-			case Track.STATE_PAUSED:
-				track.pause();
-				track.mCurrentState = Track.STATE_PAUSED;
-				Log.d(TAG_API, "State changed to Track.STATE_PAUSED");
-				break;
-			default:
-				track.error();
-			}
+			track.pause();
 
 		}
 
@@ -201,23 +143,7 @@ public class SoundService extends Service {
 		public void prepare(long sessionId) {
 			Log.d(TAG_API, "Session: " + sessionId + ". Prepare called");
 			Track track = mTracks.get((int) sessionId);
-			switch (track.mCurrentState) {
-			case Track.STATE_INITIALIZED:
-			case Track.STATE_STOPPED:
-				track.initStream();
-				track.mCurrentState = Track.STATE_PREPARED;
-				Log.d(TAG_API, "Session: " + sessionId
-						+ ". State changed to Track.STATE_PREPARED");
-				try {
-					track.preparedCallback.onPrepared();
-				} catch (RemoteException e) {
-					e.printStackTrace();
-					release(sessionId);
-				}
-				break;
-			default:
-				track.error();
-			}
+			track.prepare();
 
 		}
 
@@ -303,9 +229,6 @@ public class SoundService extends Service {
 			Log.d(TAG_API, "Session: " + sessionId + ". Reset called");
 			Track track = mTracks.get((int) sessionId);
 			track.reset();
-			track.mCurrentState = Track.STATE_IDLE;
-			Log.d(TAG_API, "Session: " + sessionId
-					+ ". State changed to Track.STATE_IDLE");
 			Log.d(TAG_API, "Session: " + sessionId + ". End of reset");
 		}
 
@@ -328,16 +251,7 @@ public class SoundService extends Service {
 			Log.d(TAG_API, "Session: " + sessionId
 					+ ". SetDataSourceString called");
 			Track track = mTracks.get((int) sessionId);
-			switch (track.mCurrentState) {
-			case Track.STATE_IDLE:
-				track.mPath = path;
-				track.mCurrentState = Track.STATE_INITIALIZED;
-				Log.d(TAG_API, "Session: " + sessionId
-						+ ". Moving state to STATE_INITIALIZED");
-				break;
-			default:
-				track.error();
-			}
+			track.setDataSourceString(path);
 
 		}
 
@@ -370,13 +284,13 @@ public class SoundService extends Service {
 		@Override
 		public void setPlaybackPitch(long sessionId, float f) {
 			Track track = mTracks.get((int) sessionId);
-			track.mCurrentPitch = f;
+			track.setPlaybackPitch(f);
 		}
 
 		@Override
 		public void setPlaybackSpeed(long sessionId, float f) {
 			Track track = mTracks.get((int) sessionId);
-			track.mCurrentSpeed = f;
+			track.setPlaybackSpeed(f);
 		}
 
 		@Override
@@ -386,14 +300,7 @@ public class SoundService extends Service {
 
 		@Override
 		public void setVolume(long sessionId, float left, float right) {
-			Track track = mTracks.get((int) sessionId);
-			switch (track.mCurrentState) {
-			case Track.STATE_ERROR:
-				track.error();
-				break;
-			default:
-				// No idea how this should work... :)
-			}
+			// No idea how this should work... :)
 		}
 
 		@Override
@@ -425,8 +332,9 @@ public class SoundService extends Service {
 			}
 			// It seems really strange to me to passing this callback to the
 			// track since it never actually gets called or used by the track.
-			// However, cb will be a candidate for garbage collection after this
-			// method pops unless we 'do' something with it.
+			// However, unless we 'do' something with it, cb will be a candidate
+			// for garbage collection after this
+			// method pops
 			mTracks.append(sessionId, new Track(cb));
 			return sessionId;
 		}
@@ -435,24 +343,10 @@ public class SoundService extends Service {
 		public void stop(long sessionId) {
 			Log.d(TAG_API, "Session: " + sessionId + ". Stop called");
 			Track track = mTracks.get((int) sessionId);
-			switch (track.mCurrentState) {
-			case Track.STATE_PREPARED:
-			case Track.STATE_STARTED:
-			case Track.STATE_STOPPED:
-			case Track.STATE_PAUSED:
-			case Track.STATE_PLAYBACK_COMPLETED:
-				track.mCurrentState = Track.STATE_STOPPED;
-				Log.d(TAG_API, "State changed to Track.STATE_STOPPED");
-				track.stop();
-				Log.d(TAG_API, "Session: " + sessionId + ". Stop done");
-				break;
-
-			default:
-				track.error();
-			}
+			track.stop();
+			Log.d(TAG_API, "Session: " + sessionId + ". Stop done");
 		}
 
-		// wtf are these unregister methods for???
 		@Override
 		public void unregisterOnBufferingUpdateCallback(long sessionId,
 				IOnBufferingUpdateListenerCallback_0_8 cb) {
