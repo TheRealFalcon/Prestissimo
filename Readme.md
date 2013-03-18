@@ -1,6 +1,6 @@
 # Prestissimo
 
-Prestissimo is a free (as in beer) and open source drop-in replacement for the Presto Sound Library Open Beta.
+Prestissimo is a free drop-in replacement for the Presto Sound Library Open Beta.
 It allows you to adjust the pitch and playback rate of media files.
 
 You must use a podcatcher that supports Presto.  The podcatcher will provide the interface
