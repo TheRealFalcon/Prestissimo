@@ -149,11 +149,9 @@ public class SoundService extends Service {
 
 		@Override
 		public void prepareAsync(long sessionId) {
-			// Not supported yet
 			Track track = mTracks.get((int) sessionId);
-			Log.d(TAG_API, "Session: " + sessionId
-					+ ". PrepareAsync called but not supported!");
-			track.error();
+			Log.d(TAG_API, "Session: " + sessionId + ". PrepareAsync called");
+			track.prepareAsync();
 		}
 
 		@Override
@@ -258,11 +256,9 @@ public class SoundService extends Service {
 		@Override
 		public void setDataSourceUri(long sessionId, Uri uri) {
 			Track track = mTracks.get((int) sessionId);
-			Log.e(TAG_API,
-					"Session: "
-							+ sessionId
-							+ ". Attempting to set DataSourceUri which is not supported!");
-			track.error();
+			Log.d(TAG_API, "Session: " + sessionId
+					+ ". setDataSourceUri called");
+			track.setDataSourceUri(uri);
 		}
 
 		@Override
@@ -335,7 +331,7 @@ public class SoundService extends Service {
 			// However, unless we 'do' something with it, cb will be a candidate
 			// for garbage collection after this
 			// method pops
-			mTracks.append(sessionId, new Track(cb));
+			mTracks.append(sessionId, new Track(SoundService.this, cb));
 			return sessionId;
 		}
 

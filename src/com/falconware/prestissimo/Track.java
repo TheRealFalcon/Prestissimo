@@ -1,9 +1,11 @@
 package com.falconware.prestissimo;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 
 import org.vinuxproject.sonic.Sonic;
 
+import android.content.Context;
 import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioTrack;
@@ -11,6 +13,7 @@ import android.media.MediaCodec;
 import android.media.MediaExtractor;
 import android.media.MediaFormat;
 import android.media.MediaPlayer;
+import android.net.Uri;
 import android.os.RemoteException;
 import android.util.Log;
 
@@ -32,11 +35,13 @@ public class Track {
 	private MediaCodec mCodec;
 	private Thread mDecoderThread;
 	private String mPath;
+	private Uri mUri;
 	private boolean mContinue;
 	private long mDuration;
 	private float mCurrentSpeed;
 	private float mCurrentPitch;
 	private int mCurrentState;
+	private final Context mContext;
 
 	private final static int TRACK_NUM = 0;
 	private final static String TAG_TRACK = "PrestissimoTrack";
@@ -52,6 +57,8 @@ public class Track {
 	private final static int STATE_END = 8;
 	private final static int STATE_ERROR = 9;
 
+	// The aidl interface should automatically implement stubs for these, so
+	// don't initialize or require null checks.
 	protected IOnErrorListenerCallback_0_8 errorCallback;
 	protected IOnCompletionListenerCallback_0_8 completionCallback;
 	protected IOnBufferingUpdateListenerCallback_0_8 bufferingUpdateCallback;
@@ -64,12 +71,15 @@ public class Track {
 	// Don't know how to persist this other than pass it in and 'hold' it
 	private final IDeathCallback_0_8 mDeath;
 
-	public Track(IDeathCallback_0_8 cb) {
+	public Track(Context context, IDeathCallback_0_8 cb) {
 		mCurrentState = STATE_IDLE;
 		mCurrentSpeed = (float) 1.0;
 		mCurrentPitch = (float) 1.0;
 		mContinue = false;
+		mContext = context;
 		mDeath = cb;
+		mPath = null;
+		mUri = null;
 	}
 
 	// TODO: This probably isn't right...
@@ -79,7 +89,7 @@ public class Track {
 
 	public int getCurrentPosition() {
 		switch (mCurrentState) {
-		case Track.STATE_ERROR:
+		case STATE_ERROR:
 			error();
 			break;
 		default:
@@ -95,9 +105,9 @@ public class Track {
 
 	public int getDuration() {
 		switch (mCurrentState) {
-		case Track.STATE_INITIALIZED:
-		case Track.STATE_IDLE:
-		case Track.STATE_ERROR:
+		case STATE_INITIALIZED:
+		case STATE_IDLE:
+		case STATE_ERROR:
 			error();
 			break;
 		default:
@@ -108,22 +118,22 @@ public class Track {
 
 	public boolean isPlaying() {
 		switch (mCurrentState) {
-		case Track.STATE_ERROR:
+		case STATE_ERROR:
 			error();
 			break;
 		default:
-			return mCurrentState == Track.STATE_STARTED;
+			return mCurrentState == STATE_STARTED;
 		}
 		return false;
 	}
 
 	public void pause() {
 		switch (mCurrentState) {
-		case Track.STATE_STARTED:
-		case Track.STATE_PAUSED:
+		case STATE_STARTED:
+		case STATE_PAUSED:
 			mTrack.pause();
-			mCurrentState = Track.STATE_PAUSED;
-			Log.d(TAG_TRACK, "State changed to Track.STATE_PAUSED");
+			mCurrentState = STATE_PAUSED;
+			Log.d(TAG_TRACK, "State changed to STATE_PAUSED");
 			break;
 		default:
 			error();
@@ -133,11 +143,11 @@ public class Track {
 
 	public void prepare() {
 		switch (mCurrentState) {
-		case Track.STATE_INITIALIZED:
-		case Track.STATE_STOPPED:
+		case STATE_INITIALIZED:
+		case STATE_STOPPED:
 			initStream();
-			mCurrentState = Track.STATE_PREPARED;
-			Log.d(TAG_TRACK, "State changed to Track.STATE_PREPARED");
+			mCurrentState = STATE_PREPARED;
+			Log.d(TAG_TRACK, "State changed to STATE_PREPARED");
 			try {
 				preparedCallback.onPrepared();
 			} catch (RemoteException e) {
@@ -149,15 +159,48 @@ public class Track {
 		}
 	}
 
+	public void prepareAsync() {
+		switch (mCurrentState) {
+		case STATE_INITIALIZED:
+		case STATE_STOPPED:
+			mCurrentState = STATE_PREPARING;
+			Log.d(TAG_TRACK, "State changed to STATE_PREPARING");
+
+			Thread t = new Thread(new Runnable() {
+
+				@Override
+				public void run() {
+					initStream();
+					try {
+						preparedCallback.onPrepared();
+
+					} catch (RemoteException e) {
+						// Binder should handle our death
+					}
+					if (mCurrentState != STATE_ERROR) {
+						mCurrentState = STATE_PREPARED;
+						Log.d(TAG_TRACK, "State changed to STATE_PREPARED");
+					}
+				}
+			});
+			t.setDaemon(true);
+			t.start();
+
+			break;
+		default:
+			error();
+		}
+	}
+
 	public void stop() {
 		switch (mCurrentState) {
-		case Track.STATE_PREPARED:
-		case Track.STATE_STARTED:
-		case Track.STATE_STOPPED:
-		case Track.STATE_PAUSED:
-		case Track.STATE_PLAYBACK_COMPLETED:
-			mCurrentState = Track.STATE_STOPPED;
-			Log.d(TAG_TRACK, "State changed to Track.STATE_STOPPED");
+		case STATE_PREPARED:
+		case STATE_STARTED:
+		case STATE_STOPPED:
+		case STATE_PAUSED:
+		case STATE_PLAYBACK_COMPLETED:
+			mCurrentState = STATE_STOPPED;
+			Log.d(TAG_TRACK, "State changed to STATE_STOPPED");
 			mContinue = false;
 			mTrack.pause();
 			mTrack.flush();
@@ -171,25 +214,24 @@ public class Track {
 
 	public void start() {
 		switch (mCurrentState) {
-		case Track.STATE_PREPARED:
-		case Track.STATE_PLAYBACK_COMPLETED:
-			mCurrentState = Track.STATE_STARTED;
-			Log.d(SoundService.TAG_API, "State changed to Track.STATE_STARTED");
+		case STATE_PREPARED:
+		case STATE_PLAYBACK_COMPLETED:
+			mCurrentState = STATE_STARTED;
+			Log.d(SoundService.TAG_API, "State changed to STATE_STARTED");
 			mContinue = true;
 			decode();
 			mTrack.play();
-		case Track.STATE_STARTED:
+		case STATE_STARTED:
 			break;
-		case Track.STATE_PAUSED:
-			mCurrentState = Track.STATE_STARTED;
-			Log.d(SoundService.TAG_API, "State changed to Track.STATE_PAUSED");
+		case STATE_PAUSED:
+			mCurrentState = STATE_STARTED;
+			Log.d(SoundService.TAG_API, "State changed to STATE_PAUSED");
 			mDecoderThread.interrupt();
 			mTrack.play();
 			break;
 		default:
-			mCurrentState = Track.STATE_ERROR;
-			Log.d(SoundService.TAG_API,
-					"State changed to Track.STATE_ERROR in start");
+			mCurrentState = STATE_ERROR;
+			Log.d(SoundService.TAG_API, "State changed to STATE_ERROR in start");
 			if (mTrack != null) {
 				error();
 			} else {
@@ -210,27 +252,7 @@ public class Track {
 		preparedCallback = null;
 		seekCompleteCallback = null;
 		speedAdjustmentAvailableChangedCallback = null;
-		mCurrentState = Track.STATE_END;
-	}
-
-	public void initStream() {
-		mExtractor = new MediaExtractor();
-		mExtractor.setDataSource(mPath);
-		mFormat = mExtractor.getTrackFormat(TRACK_NUM);
-
-		int sampleRate = mFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE);
-		int channelCount = mFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
-		mDuration = mFormat.getLong(MediaFormat.KEY_DURATION);
-
-		Log.v(TAG_TRACK, "Sample rate: " + sampleRate);
-		initDevice(sampleRate, channelCount);
-
-		mExtractor.selectTrack(TRACK_NUM);
-		String mime = mFormat.getString(MediaFormat.KEY_MIME);
-		Log.v(TAG_TRACK, "Mime type: " + mime);
-		mCodec = MediaCodec.createDecoderByType(mime);
-
-		mCodec.configure(mFormat, null, null, 0);
+		mCurrentState = STATE_END;
 	}
 
 	public void reset() {
@@ -258,8 +280,8 @@ public class Track {
 		}
 		mFormat = null;
 
-		mCurrentState = Track.STATE_IDLE;
-		Log.d(TAG_TRACK, "State changed to Track.STATE_IDLE");
+		mCurrentState = STATE_IDLE;
+		Log.d(TAG_TRACK, "State changed to STATE_IDLE");
 
 	}
 
@@ -292,9 +314,21 @@ public class Track {
 
 	public void setDataSourceString(String path) {
 		switch (mCurrentState) {
-		case Track.STATE_IDLE:
+		case STATE_IDLE:
 			mPath = path;
-			mCurrentState = Track.STATE_INITIALIZED;
+			mCurrentState = STATE_INITIALIZED;
+			Log.d(TAG_TRACK, "Moving state to STATE_INITIALIZED");
+			break;
+		default:
+			error();
+		}
+	}
+
+	public void setDataSourceUri(Uri uri) {
+		switch (mCurrentState) {
+		case STATE_IDLE:
+			mUri = uri;
+			mCurrentState = STATE_INITIALIZED;
 			Log.d(TAG_TRACK, "Moving state to STATE_INITIALIZED");
 			break;
 		default:
@@ -312,15 +346,11 @@ public class Track {
 
 	public void error() {
 		Log.e(TAG_TRACK, "Moved to error state!");
-		mCurrentState = Track.STATE_ERROR;
+		mCurrentState = STATE_ERROR;
 		try {
-			if (errorCallback != null) {
-				boolean handled = errorCallback.onError(
-						MediaPlayer.MEDIA_ERROR_UNKNOWN, 0);
-				if (!handled) {
-					completionCallback.onCompletion();
-				}
-			} else {
+			boolean handled = errorCallback.onError(
+					MediaPlayer.MEDIA_ERROR_UNKNOWN, 0);
+			if (!handled) {
 				completionCallback.onCompletion();
 			}
 		} catch (RemoteException e) {
@@ -337,6 +367,37 @@ public class Track {
 		default:
 			return -1; // Error
 		}
+	}
+
+	public void initStream() {
+		mExtractor = new MediaExtractor();
+		if (mPath != null) {
+			// Map<String, String> hm = new HashMap<String, String>();
+			// hm.put("Content-Type", "audio/mpeg");
+			mExtractor.setDataSource(mPath);
+		} else if (mUri != null) {
+			try {
+				mExtractor.setDataSource(mContext, mUri, null);
+			} catch (IOException e) {
+				e.printStackTrace();
+				error();
+			}
+		}
+		mFormat = mExtractor.getTrackFormat(TRACK_NUM);
+
+		int sampleRate = mFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE);
+		int channelCount = mFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
+		mDuration = mFormat.getLong(MediaFormat.KEY_DURATION);
+
+		Log.v(TAG_TRACK, "Sample rate: " + sampleRate);
+		initDevice(sampleRate, channelCount);
+
+		mExtractor.selectTrack(TRACK_NUM);
+		String mime = mFormat.getString(MediaFormat.KEY_MIME);
+		Log.v(TAG_TRACK, "Mime type: " + mime);
+		mCodec = MediaCodec.createDecoderByType(mime);
+
+		mCodec.configure(mFormat, null, null, 0);
 	}
 
 	private void initDevice(int sampleRate, int numChannels) {
@@ -451,12 +512,10 @@ public class Track {
 								+ (int) (mExtractor.getSampleTime() / 1000));
 				if (sawInputEOS && sawOutputEOS) {
 					mCurrentState = STATE_PLAYBACK_COMPLETED;
-					if (completionCallback != null) {
-						try {
-							completionCallback.onCompletion();
-						} catch (RemoteException e) {
-							// Binder should handle our death
-						}
+					try {
+						completionCallback.onCompletion();
+					} catch (RemoteException e) {
+						// Binder should handle our death
 					}
 				} else {
 					Log.d(TAG_TRACK,
@@ -468,9 +527,5 @@ public class Track {
 		});
 		mDecoderThread.setDaemon(true);
 		mDecoderThread.start();
-	}
-
-	public interface KillMe {
-		void die(int sessionId);
 	}
 }
