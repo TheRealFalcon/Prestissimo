@@ -13,8 +13,6 @@ Currently works for BeyondPod on my Galaxy S3 running CM 10.1.  No other app/dev
 
 ## Current limitations/issues
 * Android 4.1+ (Jellybean) only
-* Local files only (no streaming)
 * Only support the Sonic speed adjustment library (no WSOLA).
 * Preferences are hardcoded
 * Error callback codes won't be descriptive or helpful
-* Currently ignoring setVolume(...) call
