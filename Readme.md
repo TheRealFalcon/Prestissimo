@@ -8,8 +8,7 @@ to control playback speed.
 Currently works for BeyondPod on my Galaxy S3 running CM 10.1.  No other app/device combinations have been tested.
 
 ## Download
-[APK Download](https://github.com/TheRealFalcon/Prestissimo/raw/master/Prestissimo.apk) <br>
-![QR code](https://raw.github.com/TheRealFalcon/Prestissimo/master/qrcode.png)
+http://play.google.com/store/apps/details?id=com.falconware.prestissimo
 
 ## Current limitations/issues
 * Android 4.1+ (Jellybean) only
