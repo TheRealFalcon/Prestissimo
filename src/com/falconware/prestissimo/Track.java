@@ -447,7 +447,7 @@ public class Track {
 					}
 					mSonic.setSpeed(mCurrentSpeed);
 					mSonic.setPitch(mCurrentPitch);
-					int inputBufIndex = mCodec.dequeueInputBuffer(-1);
+					int inputBufIndex = mCodec.dequeueInputBuffer(0);
 					if (inputBufIndex >= 0) {
 						ByteBuffer dstBuf = inputBuffers[inputBufIndex];
 						int sampleSize = mExtractor.readSampleData(dstBuf, 0);
@@ -473,7 +473,7 @@ public class Track {
 					MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
 					int res;
 					do {
-						res = mCodec.dequeueOutputBuffer(info, -1);
+						res = mCodec.dequeueOutputBuffer(info, 0);
 						if (res >= 0) {
 							int outputBufIndex = res;
 							ByteBuffer buf = outputBuffers[outputBufIndex];
@@ -524,7 +524,7 @@ public class Track {
 				Log.d(TAG_TRACK,
 						"Current position: "
 								+ (int) (mExtractor.getSampleTime() / 1000));
-				if (sawInputEOS && sawOutputEOS) {
+				if (sawInputEOS || sawOutputEOS) {
 					mCurrentState = STATE_PLAYBACK_COMPLETED;
 					try {
 						completionCallback.onCompletion();
