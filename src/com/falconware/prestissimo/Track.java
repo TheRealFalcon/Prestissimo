@@ -185,16 +185,17 @@ public class Track {
 				@Override
 				public void run() {
 					initStream();
+					if (mCurrentState != STATE_ERROR) {
+						mCurrentState = STATE_PREPARED;
+						Log.d(TAG_TRACK, "State changed to STATE_PREPARED");
+					}
 					try {
 						preparedCallback.onPrepared();
 
 					} catch (RemoteException e) {
 						// Binder should handle our death
 					}
-					if (mCurrentState != STATE_ERROR) {
-						mCurrentState = STATE_PREPARED;
-						Log.d(TAG_TRACK, "State changed to STATE_PREPARED");
-					}
+
 				}
 			});
 			t.setDaemon(true);
