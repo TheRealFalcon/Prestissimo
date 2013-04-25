@@ -466,7 +466,6 @@ public class Track {
 								presentationTimeUs,
 								sawInputEOS ? MediaCodec.BUFFER_FLAG_END_OF_STREAM
 										: 0);
-						System.out.println(sampleSize);
 						if (!sawInputEOS) {
 							mExtractor.advance();
 						}
@@ -481,7 +480,6 @@ public class Track {
 							ByteBuffer buf = outputBuffers[outputBufIndex];
 
 							final byte[] chunk = new byte[info.size];
-							System.out.println(info.size);
 							buf.get(chunk);
 							buf.clear();
 
