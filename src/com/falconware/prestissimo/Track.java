@@ -448,7 +448,7 @@ public class Track {
 					}
 					mSonic.setSpeed(mCurrentSpeed);
 					mSonic.setPitch(mCurrentPitch);
-					int inputBufIndex = mCodec.dequeueInputBuffer(0);
+					int inputBufIndex = mCodec.dequeueInputBuffer(200);
 					if (inputBufIndex >= 0) {
 						ByteBuffer dstBuf = inputBuffers[inputBufIndex];
 						int sampleSize = mExtractor.readSampleData(dstBuf, 0);
@@ -466,6 +466,7 @@ public class Track {
 								presentationTimeUs,
 								sawInputEOS ? MediaCodec.BUFFER_FLAG_END_OF_STREAM
 										: 0);
+						System.out.println(sampleSize);
 						if (!sawInputEOS) {
 							mExtractor.advance();
 						}
@@ -474,12 +475,13 @@ public class Track {
 					MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
 					int res;
 					do {
-						res = mCodec.dequeueOutputBuffer(info, 0);
+						res = mCodec.dequeueOutputBuffer(info, 200);
 						if (res >= 0) {
 							int outputBufIndex = res;
 							ByteBuffer buf = outputBuffers[outputBufIndex];
 
 							final byte[] chunk = new byte[info.size];
+							System.out.println(info.size);
 							buf.get(chunk);
 							buf.clear();
 
