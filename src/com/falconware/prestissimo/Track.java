@@ -16,6 +16,7 @@ package com.falconware.prestissimo;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.vinuxproject.sonic.Sonic;
 
@@ -51,6 +52,7 @@ public class Track {
 	private String mPath;
 	private Uri mUri;
 	private boolean mContinue;
+	private boolean mIsDecoding;
 	private long mDuration;
 	private float mCurrentSpeed;
 	private float mCurrentPitch;
@@ -84,16 +86,19 @@ public class Track {
 
 	// Don't know how to persist this other than pass it in and 'hold' it
 	private final IDeathCallback_0_8 mDeath;
+	final ReentrantLock lock;// = new ReentrantLock();
 
 	public Track(Context context, IDeathCallback_0_8 cb) {
 		mCurrentState = STATE_IDLE;
 		mCurrentSpeed = (float) 1.0;
 		mCurrentPitch = (float) 1.0;
 		mContinue = false;
+		mIsDecoding = false;
 		mContext = context;
 		mDeath = cb;
 		mPath = null;
 		mUri = null;
+		lock = new ReentrantLock();
 	}
 
 	// TODO: This probably isn't right...
@@ -250,8 +255,7 @@ public class Track {
 			if (mTrack != null) {
 				error();
 			} else {
-				Log.d("start",
-						"Attempting to start while in idle after construction.  Not allowed by no callbacks called");
+				Log.d("start", "Attempting to start while in idle after construction.  Not allowed by no callbacks called");
 			}
 		}
 
@@ -268,6 +272,7 @@ public class Track {
 		seekCompleteCallback = null;
 		speedAdjustmentAvailableChangedCallback = null;
 		mCurrentState = STATE_END;
+
 	}
 
 	public void reset() {
@@ -275,7 +280,9 @@ public class Track {
 		try {
 			if (mDecoderThread != null) {
 				mDecoderThread.interrupt();
-				mDecoderThread.join();
+				while (mIsDecoding) {
+					Thread.sleep(50);
+				}
 			}
 		} catch (InterruptedException e) {
 			// WTF is happening?
@@ -301,6 +308,7 @@ public class Track {
 	}
 
 	public void seekTo(final int msec) {
+
 		switch (mCurrentState) {
 		case STATE_PREPARED:
 		case STATE_STARTED:
@@ -309,14 +317,18 @@ public class Track {
 			Thread t = new Thread(new Runnable() {
 				@Override
 				public void run() {
+					lock.lock();
+					if (mTrack == null) {
+						return;
+					}
 					mTrack.flush();
-					mExtractor.seekTo(((long) msec * 1000),
-							MediaExtractor.SEEK_TO_CLOSEST_SYNC);
+					mExtractor.seekTo(((long) msec * 1000), MediaExtractor.SEEK_TO_CLOSEST_SYNC);
 					try {
 						seekCompleteCallback.onSeekComplete();
 					} catch (RemoteException e) {
 						// Binder should handle our death
 					}
+					lock.unlock();
 				}
 			});
 			t.setDaemon(true);
@@ -363,8 +375,7 @@ public class Track {
 		Log.e(TAG_TRACK, "Moved to error state!");
 		mCurrentState = STATE_ERROR;
 		try {
-			boolean handled = errorCallback.onError(
-					MediaPlayer.MEDIA_ERROR_UNKNOWN, 0);
+			boolean handled = errorCallback.onError(MediaPlayer.MEDIA_ERROR_UNKNOWN, 0);
 			if (!handled) {
 				completionCallback.onCompletion();
 			}
@@ -417,11 +428,8 @@ public class Track {
 
 	private void initDevice(int sampleRate, int numChannels) {
 		int format = findFormatFromChannels(numChannels);
-		int minSize = AudioTrack.getMinBufferSize(sampleRate, format,
-				AudioFormat.ENCODING_PCM_16BIT);
-		mTrack = new AudioTrack(AudioManager.STREAM_MUSIC, sampleRate, format,
-				AudioFormat.ENCODING_PCM_16BIT, minSize * 4,
-				AudioTrack.MODE_STREAM);
+		int minSize = AudioTrack.getMinBufferSize(sampleRate, format, AudioFormat.ENCODING_PCM_16BIT);
+		mTrack = new AudioTrack(AudioManager.STREAM_MUSIC, sampleRate, format, AudioFormat.ENCODING_PCM_16BIT, minSize * 4, AudioTrack.MODE_STREAM);
 		mSonic = new Sonic(sampleRate, numChannels);
 	}
 
@@ -429,6 +437,7 @@ public class Track {
 		mDecoderThread = new Thread(new Runnable() {
 			@Override
 			public void run() {
+				mIsDecoding = true;
 				mCodec.start();
 
 				ByteBuffer[] inputBuffers = mCodec.getInputBuffers();
@@ -459,13 +468,8 @@ public class Track {
 						} else {
 							presentationTimeUs = mExtractor.getSampleTime();
 						}
-						mCodec.queueInputBuffer(
-								inputBufIndex,
-								0,
-								sampleSize,
-								presentationTimeUs,
-								sawInputEOS ? MediaCodec.BUFFER_FLAG_END_OF_STREAM
-										: 0);
+						mCodec.queueInputBuffer(inputBufIndex, 0, sampleSize, presentationTimeUs, sawInputEOS ? MediaCodec.BUFFER_FLAG_END_OF_STREAM
+								: 0);
 						if (!sawInputEOS) {
 							mExtractor.advance();
 						}
@@ -488,8 +492,7 @@ public class Track {
 								int available = mSonic.availableBytes();
 								if (available > 0) {
 									final byte[] modifiedSamples = new byte[available];
-									mSonic.receiveBytes(modifiedSamples,
-											available);
+									mSonic.receiveBytes(modifiedSamples, available);
 									mTrack.write(modifiedSamples, 0, available);
 								}
 							} else {
@@ -504,27 +507,19 @@ public class Track {
 							outputBuffers = mCodec.getOutputBuffers();
 							Log.d("PCM", "Output buffers changed");
 						} else if (res == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-							final MediaFormat oformat = mCodec
-									.getOutputFormat();
-							Log.d("PCM", "Output format has changed to"
-									+ oformat);
+							final MediaFormat oformat = mCodec.getOutputFormat();
+							Log.d("PCM", "Output format has changed to" + oformat);
 							outputBuffers = mCodec.getOutputBuffers();
 						}
-					} while (res == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED
-							|| res == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED);
+					} while (res == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED || res == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED);
 				}
-				Log.d(TAG_TRACK,
-						"Decoding loop exited. Stopping codec and track");
+				Log.d(TAG_TRACK, "Decoding loop exited. Stopping codec and track");
 				Log.d(TAG_TRACK, "Duration: " + (int) (mDuration / 1000));
-				Log.d(TAG_TRACK,
-						"Current position: "
-								+ (int) (mExtractor.getSampleTime() / 1000));
+				Log.d(TAG_TRACK, "Current position: " + (int) (mExtractor.getSampleTime() / 1000));
 				mCodec.stop();
 				mTrack.stop();
 				Log.d(TAG_TRACK, "Stopped codec and track");
-				Log.d(TAG_TRACK,
-						"Current position: "
-								+ (int) (mExtractor.getSampleTime() / 1000));
+				Log.d(TAG_TRACK, "Current position: " + (int) (mExtractor.getSampleTime() / 1000));
 				if (sawInputEOS || sawOutputEOS) {
 					mCurrentState = STATE_PLAYBACK_COMPLETED;
 					try {
@@ -533,11 +528,11 @@ public class Track {
 						// Binder should handle our death
 					}
 				} else {
-					Log.d(TAG_TRACK,
-							"Loop ended before saw input eos or output eos");
+					Log.d(TAG_TRACK, "Loop ended before saw input eos or output eos");
 					Log.d(TAG_TRACK, "sawInputEOS: " + sawInputEOS);
 					Log.d(TAG_TRACK, "sawOutputEOS: " + sawOutputEOS);
 				}
+				mIsDecoding = false;
 			}
 		});
 		mDecoderThread.setDaemon(true);

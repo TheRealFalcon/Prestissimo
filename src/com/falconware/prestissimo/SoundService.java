@@ -48,6 +48,19 @@ public class SoundService extends Service {
 	}
 
 	@Override
+	public void onDestroy() {
+		for (int id = 0; id < trackId; id++) {
+			Track track = mTracks.get(id);
+			if (track == null) {
+				continue;
+			} else {
+				track.release();
+				mTracks.delete(id);
+			}
+		}
+	}
+
+	@Override
 	public IBinder onBind(Intent intent) {
 		Log.d(TAG_SERVICE, "Returning binder");
 		return mBinder;
@@ -155,59 +168,49 @@ public class SoundService extends Service {
 		}
 
 		@Override
-		public void registerOnBufferingUpdateCallback(long sessionId,
-				IOnBufferingUpdateListenerCallback_0_8 cb) {
+		public void registerOnBufferingUpdateCallback(long sessionId, IOnBufferingUpdateListenerCallback_0_8 cb) {
 			Track track = mTracks.get((int) sessionId);
 			track.bufferingUpdateCallback = cb;
 		}
 
 		@Override
-		public void registerOnCompletionCallback(long sessionId,
-				IOnCompletionListenerCallback_0_8 cb) {
+		public void registerOnCompletionCallback(long sessionId, IOnCompletionListenerCallback_0_8 cb) {
 			Track track = mTracks.get((int) sessionId);
 			track.completionCallback = cb;
 		}
 
 		@Override
-		public void registerOnErrorCallback(long sessionId,
-				IOnErrorListenerCallback_0_8 cb) {
+		public void registerOnErrorCallback(long sessionId, IOnErrorListenerCallback_0_8 cb) {
 			Track track = mTracks.get((int) sessionId);
 			track.errorCallback = cb;
 		}
 
 		@Override
-		public void registerOnInfoCallback(long sessionId,
-				IOnInfoListenerCallback_0_8 cb) {
+		public void registerOnInfoCallback(long sessionId, IOnInfoListenerCallback_0_8 cb) {
 			Track track = mTracks.get((int) sessionId);
 			track.infoCallback = cb;
 		}
 
 		@Override
-		public void registerOnPitchAdjustmentAvailableChangedCallback(
-				long sessionId,
-				IOnPitchAdjustmentAvailableChangedListenerCallback_0_8 cb) {
+		public void registerOnPitchAdjustmentAvailableChangedCallback(long sessionId, IOnPitchAdjustmentAvailableChangedListenerCallback_0_8 cb) {
 			Track track = mTracks.get((int) sessionId);
 			track.pitchAdjustmentAvailableChangedCallback = cb;
 		}
 
 		@Override
-		public void registerOnPreparedCallback(long sessionId,
-				IOnPreparedListenerCallback_0_8 cb) {
+		public void registerOnPreparedCallback(long sessionId, IOnPreparedListenerCallback_0_8 cb) {
 			Track track = mTracks.get((int) sessionId);
 			track.preparedCallback = cb;
 		}
 
 		@Override
-		public void registerOnSeekCompleteCallback(long sessionId,
-				IOnSeekCompleteListenerCallback_0_8 cb) {
+		public void registerOnSeekCompleteCallback(long sessionId, IOnSeekCompleteListenerCallback_0_8 cb) {
 			Track track = mTracks.get((int) sessionId);
 			track.seekCompleteCallback = cb;
 		}
 
 		@Override
-		public void registerOnSpeedAdjustmentAvailableChangedCallback(
-				long sessionId,
-				IOnSpeedAdjustmentAvailableChangedListenerCallback_0_8 cb) {
+		public void registerOnSpeedAdjustmentAvailableChangedCallback(long sessionId, IOnSpeedAdjustmentAvailableChangedListenerCallback_0_8 cb) {
 			Track track = mTracks.get((int) sessionId);
 			track.speedAdjustmentAvailableChangedCallback = cb;
 		}
@@ -218,8 +221,7 @@ public class SoundService extends Service {
 			Track track = mTracks.get((int) sessionId);
 			track.release();
 			mTracks.delete((int) sessionId);
-			Log.d(TAG_API, "Session: " + sessionId
-					+ ". State changed to Track.STATE_END");
+			Log.d(TAG_API, "Session: " + sessionId + ". State changed to Track.STATE_END");
 		}
 
 		@Override
@@ -246,8 +248,7 @@ public class SoundService extends Service {
 
 		@Override
 		public void setDataSourceString(long sessionId, String path) {
-			Log.d(TAG_API, "Session: " + sessionId
-					+ ". SetDataSourceString called");
+			Log.d(TAG_API, "Session: " + sessionId + ". SetDataSourceString called");
 			Track track = mTracks.get((int) sessionId);
 			track.setDataSourceString(path);
 
@@ -256,14 +257,12 @@ public class SoundService extends Service {
 		@Override
 		public void setDataSourceUri(long sessionId, Uri uri) {
 			Track track = mTracks.get((int) sessionId);
-			Log.d(TAG_API, "Session: " + sessionId
-					+ ". setDataSourceUri called");
+			Log.d(TAG_API, "Session: " + sessionId + ". setDataSourceUri called");
 			track.setDataSourceUri(uri);
 		}
 
 		@Override
-		public void setEnableSpeedAdjustment(long sessionId,
-				boolean enableSpeedAdjustment) {
+		public void setEnableSpeedAdjustment(long sessionId, boolean enableSpeedAdjustment) {
 
 		}
 
@@ -323,14 +322,12 @@ public class SoundService extends Service {
 				}, 0);
 			} catch (RemoteException e) {
 				e.printStackTrace();
-				Log.wtf(TAG_API,
-						"Service died when trying to set what to do when it dies.  Good luck!");
+				Log.wtf(TAG_API, "Service died when trying to set what to do when it dies.  Good luck!");
 			}
 			// It seems really strange to me to passing this callback to the
 			// track since it never actually gets called or used by the track.
 			// However, unless we 'do' something with it, cb will be a candidate
-			// for garbage collection after this
-			// method pops
+			// for garbage collection after this method pops
 			mTracks.append(sessionId, new Track(SoundService.this, cb));
 			return sessionId;
 		}
@@ -344,61 +341,43 @@ public class SoundService extends Service {
 		}
 
 		@Override
-		public void unregisterOnBufferingUpdateCallback(long sessionId,
-				IOnBufferingUpdateListenerCallback_0_8 cb) {
-			Log.e("SoundService",
-					"In unregisterOnBufferingUpdateCallback. This should never happen!");
+		public void unregisterOnBufferingUpdateCallback(long sessionId, IOnBufferingUpdateListenerCallback_0_8 cb) {
+			Log.e("SoundService", "In unregisterOnBufferingUpdateCallback. This should never happen!");
 		}
 
 		@Override
-		public void unregisterOnCompletionCallback(long sessionId,
-				IOnCompletionListenerCallback_0_8 cb) {
-			Log.e("SoundService",
-					"In unregisterOnCompletionCallback. This should never happen!");
+		public void unregisterOnCompletionCallback(long sessionId, IOnCompletionListenerCallback_0_8 cb) {
+			Log.e("SoundService", "In unregisterOnCompletionCallback. This should never happen!");
 		}
 
 		@Override
-		public void unregisterOnErrorCallback(long sessionId,
-				IOnErrorListenerCallback_0_8 cb) {
-			Log.e("SoundService",
-					"In unregisterOnErrorCallback. This should never happen!");
+		public void unregisterOnErrorCallback(long sessionId, IOnErrorListenerCallback_0_8 cb) {
+			Log.e("SoundService", "In unregisterOnErrorCallback. This should never happen!");
 		}
 
 		@Override
-		public void unregisterOnInfoCallback(long sessionId,
-				IOnInfoListenerCallback_0_8 cb) {
-			Log.e("SoundService",
-					"In unregisterOnInfoCallback. This should never happen!");
+		public void unregisterOnInfoCallback(long sessionId, IOnInfoListenerCallback_0_8 cb) {
+			Log.e("SoundService", "In unregisterOnInfoCallback. This should never happen!");
 		}
 
 		@Override
-		public void unregisterOnPitchAdjustmentAvailableChangedCallback(
-				long sessionId,
-				IOnPitchAdjustmentAvailableChangedListenerCallback_0_8 cb) {
-			Log.e("SoundService",
-					"In unregisterOnPitchAdjustmentAvailableChangedCallback. This should never happen!");
+		public void unregisterOnPitchAdjustmentAvailableChangedCallback(long sessionId, IOnPitchAdjustmentAvailableChangedListenerCallback_0_8 cb) {
+			Log.e("SoundService", "In unregisterOnPitchAdjustmentAvailableChangedCallback. This should never happen!");
 		}
 
 		@Override
-		public void unregisterOnPreparedCallback(long sessionId,
-				IOnPreparedListenerCallback_0_8 cb) {
-			Log.e("SoundService",
-					"In unregisterOnPreparedCallback. This should never happen!");
+		public void unregisterOnPreparedCallback(long sessionId, IOnPreparedListenerCallback_0_8 cb) {
+			Log.e("SoundService", "In unregisterOnPreparedCallback. This should never happen!");
 		}
 
 		@Override
-		public void unregisterOnSeekCompleteCallback(long sessionId,
-				IOnSeekCompleteListenerCallback_0_8 cb) {
-			Log.e("SoundService",
-					"In unregisterOnSeekCompleteCallback. This should never happen!");
+		public void unregisterOnSeekCompleteCallback(long sessionId, IOnSeekCompleteListenerCallback_0_8 cb) {
+			Log.e("SoundService", "In unregisterOnSeekCompleteCallback. This should never happen!");
 		}
 
 		@Override
-		public void unregisterOnSpeedAdjustmentAvailableChangedCallback(
-				long sessionId,
-				IOnSpeedAdjustmentAvailableChangedListenerCallback_0_8 cb) {
-			Log.e("SoundService",
-					"In unregisterOnSpeedAdjustmentAvailableChangedCallback. This should never happen!");
+		public void unregisterOnSpeedAdjustmentAvailableChangedCallback(long sessionId, IOnSpeedAdjustmentAvailableChangedListenerCallback_0_8 cb) {
+			Log.e("SoundService", "In unregisterOnSpeedAdjustmentAvailableChangedCallback. This should never happen!");
 		}
 
 	};
