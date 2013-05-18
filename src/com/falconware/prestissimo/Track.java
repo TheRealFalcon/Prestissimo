@@ -171,6 +171,8 @@ public class Track {
 				preparedCallback.onPrepared();
 			} catch (RemoteException e) {
 				// Binder should handle our death
+				Log.e(TAG_TRACK,
+						"RemoteException calling onPrepared after prepare", e);
 			}
 			break;
 		default:
@@ -199,6 +201,9 @@ public class Track {
 
 					} catch (RemoteException e) {
 						// Binder should handle our death
+						Log.e(TAG_TRACK,
+								"RemoteException trying to call onPrepared after prepareAsync",
+								e);
 					}
 
 				}
@@ -255,7 +260,8 @@ public class Track {
 			if (mTrack != null) {
 				error();
 			} else {
-				Log.d("start", "Attempting to start while in idle after construction.  Not allowed by no callbacks called");
+				Log.d("start",
+						"Attempting to start while in idle after construction.  Not allowed by no callbacks called");
 			}
 		}
 
@@ -278,7 +284,8 @@ public class Track {
 	public void reset() {
 		mContinue = false;
 		try {
-			if (mDecoderThread != null) {
+			if (mDecoderThread != null
+					&& mCurrentState != STATE_PLAYBACK_COMPLETED) {
 				mDecoderThread.interrupt();
 				while (mIsDecoding) {
 					Thread.sleep(50);
@@ -286,7 +293,9 @@ public class Track {
 			}
 		} catch (InterruptedException e) {
 			// WTF is happening?
-			e.printStackTrace();
+			Log.e(TAG_TRACK,
+					"Interrupted in reset while waiting for decoder thread to stop.",
+					e);
 		}
 		if (mCodec != null) {
 			mCodec.release();
@@ -322,11 +331,15 @@ public class Track {
 						return;
 					}
 					mTrack.flush();
-					mExtractor.seekTo(((long) msec * 1000), MediaExtractor.SEEK_TO_CLOSEST_SYNC);
+					mExtractor.seekTo(((long) msec * 1000),
+							MediaExtractor.SEEK_TO_CLOSEST_SYNC);
 					try {
 						seekCompleteCallback.onSeekComplete();
 					} catch (RemoteException e) {
 						// Binder should handle our death
+						Log.e(TAG_TRACK,
+								"Received RemoteException trying to call onSeekComplete in seekTo",
+								e);
 					}
 					lock.unlock();
 				}
@@ -375,12 +388,16 @@ public class Track {
 		Log.e(TAG_TRACK, "Moved to error state!");
 		mCurrentState = STATE_ERROR;
 		try {
-			boolean handled = errorCallback.onError(MediaPlayer.MEDIA_ERROR_UNKNOWN, 0);
+			boolean handled = errorCallback.onError(
+					MediaPlayer.MEDIA_ERROR_UNKNOWN, 0);
 			if (!handled) {
 				completionCallback.onCompletion();
 			}
 		} catch (RemoteException e) {
 			// Binder should handle our death
+			Log.e(TAG_TRACK,
+					"Received RemoteException when trying to call onCompletion in error state",
+					e);
 		}
 	}
 
@@ -405,7 +422,7 @@ public class Track {
 			try {
 				mExtractor.setDataSource(mContext, mUri, null);
 			} catch (IOException e) {
-				e.printStackTrace();
+				Log.e(TAG_TRACK, "Failed setting data source!", e);
 				error();
 			}
 		}
@@ -428,8 +445,11 @@ public class Track {
 
 	private void initDevice(int sampleRate, int numChannels) {
 		int format = findFormatFromChannels(numChannels);
-		int minSize = AudioTrack.getMinBufferSize(sampleRate, format, AudioFormat.ENCODING_PCM_16BIT);
-		mTrack = new AudioTrack(AudioManager.STREAM_MUSIC, sampleRate, format, AudioFormat.ENCODING_PCM_16BIT, minSize * 4, AudioTrack.MODE_STREAM);
+		int minSize = AudioTrack.getMinBufferSize(sampleRate, format,
+				AudioFormat.ENCODING_PCM_16BIT);
+		mTrack = new AudioTrack(AudioManager.STREAM_MUSIC, sampleRate, format,
+				AudioFormat.ENCODING_PCM_16BIT, minSize * 4,
+				AudioTrack.MODE_STREAM);
 		mSonic = new Sonic(sampleRate, numChannels);
 	}
 
@@ -468,8 +488,13 @@ public class Track {
 						} else {
 							presentationTimeUs = mExtractor.getSampleTime();
 						}
-						mCodec.queueInputBuffer(inputBufIndex, 0, sampleSize, presentationTimeUs, sawInputEOS ? MediaCodec.BUFFER_FLAG_END_OF_STREAM
-								: 0);
+						mCodec.queueInputBuffer(
+								inputBufIndex,
+								0,
+								sampleSize,
+								presentationTimeUs,
+								sawInputEOS ? MediaCodec.BUFFER_FLAG_END_OF_STREAM
+										: 0);
 						if (!sawInputEOS) {
 							mExtractor.advance();
 						}
@@ -492,7 +517,8 @@ public class Track {
 								int available = mSonic.availableBytes();
 								if (available > 0) {
 									final byte[] modifiedSamples = new byte[available];
-									mSonic.receiveBytes(modifiedSamples, available);
+									mSonic.receiveBytes(modifiedSamples,
+											available);
 									mTrack.write(modifiedSamples, 0, available);
 								}
 							} else {
@@ -507,28 +533,40 @@ public class Track {
 							outputBuffers = mCodec.getOutputBuffers();
 							Log.d("PCM", "Output buffers changed");
 						} else if (res == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-							final MediaFormat oformat = mCodec.getOutputFormat();
-							Log.d("PCM", "Output format has changed to" + oformat);
+							final MediaFormat oformat = mCodec
+									.getOutputFormat();
+							Log.d("PCM", "Output format has changed to"
+									+ oformat);
 							outputBuffers = mCodec.getOutputBuffers();
 						}
-					} while (res == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED || res == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED);
+					} while (res == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED
+							|| res == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED);
 				}
-				Log.d(TAG_TRACK, "Decoding loop exited. Stopping codec and track");
+				Log.d(TAG_TRACK,
+						"Decoding loop exited. Stopping codec and track");
 				Log.d(TAG_TRACK, "Duration: " + (int) (mDuration / 1000));
-				Log.d(TAG_TRACK, "Current position: " + (int) (mExtractor.getSampleTime() / 1000));
+				Log.d(TAG_TRACK,
+						"Current position: "
+								+ (int) (mExtractor.getSampleTime() / 1000));
 				mCodec.stop();
 				mTrack.stop();
 				Log.d(TAG_TRACK, "Stopped codec and track");
-				Log.d(TAG_TRACK, "Current position: " + (int) (mExtractor.getSampleTime() / 1000));
-				if (sawInputEOS || sawOutputEOS) {
+				Log.d(TAG_TRACK,
+						"Current position: "
+								+ (int) (mExtractor.getSampleTime() / 1000));
+				if (mContinue && (sawInputEOS || sawOutputEOS)) {
 					mCurrentState = STATE_PLAYBACK_COMPLETED;
 					try {
 						completionCallback.onCompletion();
 					} catch (RemoteException e) {
 						// Binder should handle our death
+						Log.e(TAG_TRACK,
+								"RemoteException trying to call onCompletion after decoding",
+								e);
 					}
 				} else {
-					Log.d(TAG_TRACK, "Loop ended before saw input eos or output eos");
+					Log.d(TAG_TRACK,
+							"Loop ended before saw input eos or output eos");
 					Log.d(TAG_TRACK, "sawInputEOS: " + sawInputEOS);
 					Log.d(TAG_TRACK, "sawOutputEOS: " + sawOutputEOS);
 				}
