@@ -502,6 +502,7 @@ public class Track {
 
 					MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
 					int res;
+
 					do {
 						res = mCodec.dequeueOutputBuffer(info, 200);
 						if (res >= 0) {
@@ -535,9 +536,15 @@ public class Track {
 						} else if (res == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
 							final MediaFormat oformat = mCodec
 									.getOutputFormat();
+							initDevice(
+									oformat.getInteger(MediaFormat.KEY_SAMPLE_RATE),
+									oformat.getInteger(MediaFormat.KEY_CHANNEL_COUNT));
+							mTrack.stop();
 							Log.d("PCM", "Output format has changed to"
 									+ oformat);
 							outputBuffers = mCodec.getOutputBuffers();
+							mTrack.play();
+
 						}
 					} while (res == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED
 							|| res == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED);
