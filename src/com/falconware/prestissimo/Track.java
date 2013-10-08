@@ -168,7 +168,8 @@ public class Track {
 				preparedCallback.onPrepared();
 			} catch (RemoteException e) {
 				// Binder should handle our death
-				Log.e(TAG_TRACK, "RemoteException calling onPrepared after prepare", e);
+				Log.e(TAG_TRACK,
+						"RemoteException calling onPrepared after prepare", e);
 			}
 			break;
 		default:
@@ -238,6 +239,7 @@ public class Track {
 			mCurrentState = STATE_STARTED;
 			Log.d(SoundService.TAG_API, "State changed to STATE_STARTED");
 			mContinue = true;
+			mTrack.play();
 			decode();
 		case STATE_STARTED:
 			break;
@@ -276,14 +278,17 @@ public class Track {
 		mContinue = false;
 		try {
 			if (mDecoderThread != null
-				&& mCurrentState != STATE_PLAYBACK_COMPLETED) {
+					&& mCurrentState != STATE_PLAYBACK_COMPLETED) {
 				mDecoderThread.interrupt();
-				while (mIsDecoding)
+				while (mIsDecoding) {
 					Thread.sleep(50);
+				}
 			}
 		} catch (InterruptedException e) {
 			// WTF is happening?
-			Log.e(TAG_TRACK, "Interrupted in reset while waiting for decoder thread to stop.", e);
+			Log.e(TAG_TRACK,
+					"Interrupted in reset while waiting for decoder thread to stop.",
+					e);
 		}
 		if (mCodec != null) {
 			mCodec.release();
@@ -372,9 +377,11 @@ public class Track {
 		Log.e(TAG_TRACK, "Moved to error state!");
 		mCurrentState = STATE_ERROR;
 		try {
-			boolean handled = errorCallback.onError(MediaPlayer.MEDIA_ERROR_UNKNOWN, 0);
-			if (!handled)
+			boolean handled = errorCallback.onError(
+					MediaPlayer.MEDIA_ERROR_UNKNOWN, 0);
+			if (!handled) {
 				completionCallback.onCompletion();
+			}
 		} catch (RemoteException e) {
 			// Binder should handle our death
 			Log.e(TAG_TRACK,
@@ -385,17 +392,20 @@ public class Track {
 
 	private int findFormatFromChannels(int numChannels) {
 		switch (numChannels) {
-		case 1:  return AudioFormat.CHANNEL_OUT_MONO;
-		case 2:  return AudioFormat.CHANNEL_OUT_STEREO;
-		default: return -1; // Error
+		case 1:
+			return AudioFormat.CHANNEL_OUT_MONO;
+		case 2:
+			return AudioFormat.CHANNEL_OUT_STEREO;
+		default:
+			return -1; // Error
 		}
 	}
 
 	public void initStream() {
 		mExtractor = new MediaExtractor();
-		if (mPath != null)
+		if (mPath != null) {
 			mExtractor.setDataSource(mPath);
-		else if (mUri != null) {
+		} else if (mUri != null) {
 			try {
 				mExtractor.setDataSource(mContext, mUri, null);
 			} catch (IOException e) {
@@ -404,24 +414,24 @@ public class Track {
 			}
 		}
 
-		mExtractor.selectTrack(TRACK_NUM);
 		final MediaFormat oFormat = mExtractor.getTrackFormat(TRACK_NUM);
+		int sampleRate = oFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE);
+		int channelCount = oFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
 		final String mime = oFormat.getString(MediaFormat.KEY_MIME);
-		mDuration         = oFormat.getLong(  MediaFormat.KEY_DURATION);
+		mDuration = oFormat.getLong(MediaFormat.KEY_DURATION);
 
+		Log.v(TAG_TRACK, "Sample rate: " + sampleRate);
 		Log.v(TAG_TRACK, "Mime type: " + mime);
+
+		initDevice(sampleRate, channelCount);
+		mExtractor.selectTrack(TRACK_NUM);
 		mCodec = MediaCodec.createDecoderByType(mime);
 		mCodec.configure(oFormat, null, null, 0);
 
-		/* Initialise mTrack with dummy data, otherwise all uses of mTrack
-		 * must be protected agains null reference */
-		mTrack = new AudioTrack(AudioManager.STREAM_MUSIC, 44100, 2,
-				AudioFormat.ENCODING_PCM_16BIT, 1024,
-				AudioTrack.MODE_STREAM);
 	}
 
 	private void initDevice(int sampleRate, int numChannels) {
-		final int format  = findFormatFromChannels(numChannels);
+		final int format = findFormatFromChannels(numChannels);
 		final int minSize = AudioTrack.getMinBufferSize(sampleRate, format,
 				AudioFormat.ENCODING_PCM_16BIT);
 		mTrack = new AudioTrack(AudioManager.STREAM_MUSIC, sampleRate, format,
@@ -437,10 +447,10 @@ public class Track {
 				mIsDecoding = true;
 				mCodec.start();
 
-				ByteBuffer[] inputBuffers  = mCodec.getInputBuffers();
+				ByteBuffer[] inputBuffers = mCodec.getInputBuffers();
 				ByteBuffer[] outputBuffers = mCodec.getOutputBuffers();
 
-				boolean sawInputEOS  = false;
+				boolean sawInputEOS = false;
 				boolean sawOutputEOS = false;
 
 				while (!sawInputEOS && !sawOutputEOS && mContinue) {
@@ -453,8 +463,7 @@ public class Track {
 						continue;
 					}
 
-					if (null != mSonic)
-					{
+					if (null != mSonic) {
 						mSonic.setSpeed(mCurrentSpeed);
 						mSonic.setPitch(mCurrentPitch);
 					}
@@ -467,9 +476,9 @@ public class Track {
 						if (sampleSize < 0) {
 							sawInputEOS = true;
 							sampleSize = 0;
-						} else
+						} else {
 							presentationTimeUs = mExtractor.getSampleTime();
-
+						}
 						mCodec.queueInputBuffer(
 								inputBufIndex,
 								0,
@@ -477,8 +486,9 @@ public class Track {
 								presentationTimeUs,
 								sawInputEOS ? MediaCodec.BUFFER_FLAG_END_OF_STREAM
 										: 0);
-						if (!sawInputEOS)
+						if (!sawInputEOS) {
 							mExtractor.advance();
+						}
 					}
 
 					final MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
@@ -499,39 +509,49 @@ public class Track {
 								if (available > 0) {
 									if (modifiedSamples.length < available)
 										modifiedSamples = new byte[available];
-									mSonic.receiveBytes(modifiedSamples, available);
+									mSonic.receiveBytes(modifiedSamples,
+											available);
 									mTrack.write(modifiedSamples, 0, available);
 								}
-							} else
+							} else {
 								mSonic.flush();
-
+							}
 							mCodec.releaseOutputBuffer(outputBufIndex, false);
 
-							if ((info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0)
+							if ((info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
 								sawOutputEOS = true;
-
+							}
 						} else if (res == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED) {
 							outputBuffers = mCodec.getOutputBuffers();
 							Log.d("PCM", "Output buffers changed");
 						} else if (res == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
 							mTrack.stop();
-							final MediaFormat oformat = mCodec.getOutputFormat();
-							Log.d("PCM", "Output format has changed to" + oformat);
+							mTrack.release();
+							final MediaFormat oformat = mCodec
+									.getOutputFormat();
+							Log.d("PCM", "Output format has changed to"
+									+ oformat);
 							initDevice(
 									oformat.getInteger(MediaFormat.KEY_SAMPLE_RATE),
 									oformat.getInteger(MediaFormat.KEY_CHANNEL_COUNT));
 							outputBuffers = mCodec.getOutputBuffers();
 							mTrack.play();
 						}
-					} while (  res == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED
+					} while (res == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED
 							|| res == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED);
 				}
+				Log.d(TAG_TRACK,
+						"Decoding loop exited. Stopping codec and track");
+				Log.d(TAG_TRACK, "Duration: " + (int) (mDuration / 1000));
+				Log.d(TAG_TRACK,
+						"Current position: "
+								+ (int) (mExtractor.getSampleTime() / 1000));
 				mCodec.stop();
 				mTrack.stop();
-				Log.d(TAG_TRACK, "Decoding loop exited. Stopped codec and track");
-				Log.d(TAG_TRACK, "Duration: "         + (int) (mDuration                  / 1000));
-				Log.d(TAG_TRACK, "Current position: " + (int) (mExtractor.getSampleTime() / 1000));
-
+				Log.d(TAG_TRACK, "Stopped codec and track");
+				Log.d(TAG_TRACK,
+						"Current position: "
+								+ (int) (mExtractor.getSampleTime() / 1000));
 				if (mContinue && (sawInputEOS || sawOutputEOS)) {
 					mCurrentState = STATE_PLAYBACK_COMPLETED;
 					try {
@@ -543,8 +563,9 @@ public class Track {
 								e);
 					}
 				} else {
-					Log.d(TAG_TRACK, "Loop ended before saw input eos or output eos");
-					Log.d(TAG_TRACK, "sawInputEOS: "  + sawInputEOS);
+					Log.d(TAG_TRACK,
+							"Loop ended before saw input eos or output eos");
+					Log.d(TAG_TRACK, "sawInputEOS: " + sawInputEOS);
 					Log.d(TAG_TRACK, "sawOutputEOS: " + sawOutputEOS);
 				}
 				mIsDecoding = false;
