@@ -72,8 +72,11 @@ public class SoundService extends Service {
 		Log.e(TAG_SERVICE, "Received RemoteException.  Service will die.");
 		int sessionId = (int) lSessionId;
 		Track track = mTracks.get(sessionId);
-		track.release();
-		mTracks.delete(sessionId);
+		if (null != track)
+		{
+			track.release();
+			mTracks.delete(sessionId);
+		}
 	}
 
 	private final IPlayMedia_0_8.Stub mBinder = new IPlayMedia_0_8.Stub() {
@@ -229,10 +232,14 @@ public class SoundService extends Service {
 		public void release(long sessionId) {
 			Log.d(TAG_API, "Session: " + sessionId + ". Release called");
 			Track track = mTracks.get((int) sessionId);
-			track.release();
-			mTracks.delete((int) sessionId);
-			Log.d(TAG_API, "Session: " + sessionId
-					+ ". State changed to Track.STATE_END");
+			if (null != track)
+			{
+				track.release();
+				mTracks.delete((int) sessionId);
+				Log.d(TAG_API, "Session: " + sessionId + ". State changed to Track.STATE_END");
+			}
+			else
+				Log.d(TAG_API, "Session: " + sessionId + ". State changed to Track.STATE_END, Track for this Session was not reachable.");
 		}
 
 		@Override
@@ -309,7 +316,10 @@ public class SoundService extends Service {
 
 		@Override
 		public void setVolume(long sessionId, float left, float right) {
-			// No idea how this should work... :)
+			Log.d(TAG_API, "Session: " + sessionId + ". Set volume to ("+left+", "+right+")");
+			Track track = mTracks.get((int) sessionId);
+			if (null != track)
+				track.setVolume(left, right);
 		}
 
 		@Override
