@@ -368,6 +368,15 @@ public class Track {
 		mCurrentSpeed = f;
 	}
 
+	public void setVolume(float left, float right) {
+		/* Pass the call directly to AudioTrack if available.
+		   @todo Do we need to preserve volume between mTrack instances? E.g. after initStream() call?
+		   I have not seen this method called :(
+		 */
+		if (null != mTrack)
+			mTrack.setStereoVolume(left, right);
+	}
+
 	public void error() {
 		Log.e(TAG_TRACK, "Moved to error state!");
 		mCurrentState = STATE_ERROR;

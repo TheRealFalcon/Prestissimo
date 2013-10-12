@@ -316,7 +316,10 @@ public class SoundService extends Service {
 
 		@Override
 		public void setVolume(long sessionId, float left, float right) {
-			// No idea how this should work... :)
+			Log.d(TAG_API, "Session: " + sessionId + ". Set volume to ("+left+", "+right+")");
+			Track track = mTracks.get((int) sessionId);
+			if (null != track)
+				track.setVolume(left, right);
 		}
 
 		@Override
