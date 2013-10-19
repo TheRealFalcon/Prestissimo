@@ -51,9 +51,7 @@ public class SoundService extends Service {
 	public void onDestroy() {
 		for (int id = 0; id < trackId; id++) {
 			Track track = mTracks.get(id);
-			if (track == null) {
-				continue;
-			} else {
+			if (track != null) {
 				track.release();
 				mTracks.delete(id);
 			}
@@ -72,8 +70,10 @@ public class SoundService extends Service {
 		Log.e(TAG_SERVICE, "Received RemoteException.  Service will die.");
 		int sessionId = (int) lSessionId;
 		Track track = mTracks.get(sessionId);
-		track.release();
-		mTracks.delete(sessionId);
+		if (track != null) {
+			track.release();
+			mTracks.delete(sessionId);
+		}
 	}
 
 	private final IPlayMedia_0_8.Stub mBinder = new IPlayMedia_0_8.Stub() {
