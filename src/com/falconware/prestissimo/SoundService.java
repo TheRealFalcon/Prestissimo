@@ -50,11 +50,7 @@ public class SoundService extends Service {
 	@Override
 	public void onDestroy() {
 		for (int id = 0; id < trackId; id++) {
-			Track track = mTracks.get(id);
-			if (track != null) {
-				track.release();
-				mTracks.delete(id);
-			}
+			removeTrack(id);
 		}
 	}
 
@@ -69,6 +65,10 @@ public class SoundService extends Service {
 	private void handleRemoteException(long lSessionId) {
 		Log.e(TAG_SERVICE, "Received RemoteException.  Service will die.");
 		int sessionId = (int) lSessionId;
+		removeTrack(sessionId)
+	}
+	
+	private void removeTrack(int sessionId) {
 		Track track = mTracks.get(sessionId);
 		if (track != null) {
 			track.release();
