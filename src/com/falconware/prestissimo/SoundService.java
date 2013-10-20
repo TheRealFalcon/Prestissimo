@@ -65,7 +65,7 @@ public class SoundService extends Service {
 	private void handleRemoteException(long lSessionId) {
 		Log.e(TAG_SERVICE, "Received RemoteException.  Service will die.");
 		int sessionId = (int) lSessionId;
-		removeTrack(sessionId)
+		removeTrack(sessionId);
 	}
 	
 	private void removeTrack(int sessionId) {
