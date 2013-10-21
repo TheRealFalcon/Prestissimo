@@ -6,7 +6,10 @@ You must use a podcatcher or audio player that supports Presto.  The podcatcher 
 to control playback speed.  
 
 ## Download
-http://play.google.com/store/apps/details?id=com.falconware.prestissimo
+<a href="http://play.google.com/store/apps/details?id=com.falconware.prestissimo" alt="Download from Google Play">
+  <img src="http://www.android.com/images/brand/android_app_on_play_large.png">
+</a>
+
 
 ## Current limitations/issues
 * Android 4.1+ (Jellybean) only
