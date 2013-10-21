@@ -65,7 +65,7 @@ public class SoundService extends Service {
 	private void handleRemoteException(long lSessionId) {
 		Log.e(TAG_SERVICE, "Received RemoteException.  Service will die.");
 		int sessionId = (int) lSessionId;
-		removeTrack(sessionId)
+		removeTrack(sessionId);
 	}
 	
 	private void removeTrack(int sessionId) {
@@ -228,9 +228,7 @@ public class SoundService extends Service {
 		@Override
 		public void release(long sessionId) {
 			Log.d(TAG_API, "Session: " + sessionId + ". Release called");
-			Track track = mTracks.get((int) sessionId);
-			track.release();
-			mTracks.delete((int) sessionId);
+            removeTrack((int)sessionId);
 			Log.d(TAG_API, "Session: " + sessionId
 					+ ". State changed to Track.STATE_END");
 		}
@@ -309,7 +307,14 @@ public class SoundService extends Service {
 
 		@Override
 		public void setVolume(long sessionId, float left, float right) {
-			// No idea how this should work... :)
+			// The IPlayMedia_0_8.Stub defines this method but the presto client
+            // never actually calls it. ortylp provided a reasonable implementation
+            // just in case.
+            Log.d(TAG_API, "Session: " + sessionId + ". Set volume to ("+left+", "+right+")");
+            Track track = mTracks.get((int) sessionId);
+            if (null != track) {
+                track.setVolume(left, right);
+            }
 		}
 
 		@Override

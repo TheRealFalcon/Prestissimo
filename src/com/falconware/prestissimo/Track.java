@@ -14,12 +14,6 @@
 
 package com.falconware.prestissimo;
 
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.util.concurrent.locks.ReentrantLock;
-
-import org.vinuxproject.sonic.Sonic;
-
 import android.content.Context;
 import android.media.AudioFormat;
 import android.media.AudioManager;
@@ -41,6 +35,12 @@ import com.aocate.presto.service.IOnPitchAdjustmentAvailableChangedListenerCallb
 import com.aocate.presto.service.IOnPreparedListenerCallback_0_8;
 import com.aocate.presto.service.IOnSeekCompleteListenerCallback_0_8;
 import com.aocate.presto.service.IOnSpeedAdjustmentAvailableChangedListenerCallback_0_8;
+
+import org.vinuxproject.sonic.Sonic;
+
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class Track {
 	private AudioTrack mTrack;
@@ -383,6 +383,13 @@ public class Track {
 	public void setPlaybackSpeed(float f) {
 		mCurrentSpeed = f;
 	}
+
+    public void setVolume(float left, float right) {
+         // Pass call directly to AudioTrack if available.
+        if (null != mTrack) {
+            mTrack.setStereoVolume(left, right);
+        }
+    }
 
 	public void error() {
 		Log.e(TAG_TRACK, "Moved to error state!");
