@@ -46,7 +46,6 @@ public class Track {
     private AudioTrack mTrack;
     private Sonic mSonic;
     private MediaExtractor mExtractor;
-    private MediaFormat mFormat;
     private MediaCodec mCodec;
     private Thread mDecoderThread;
     private String mPath;
@@ -86,7 +85,7 @@ public class Track {
 
     // Don't know how to persist this other than pass it in and 'hold' it
     private final IDeathCallback_0_8 mDeath;
-    final ReentrantLock lock;// = new ReentrantLock();
+	final ReentrantLock lock;
 
     public Track(Context context, IDeathCallback_0_8 cb) {
         mCurrentState = STATE_IDLE;
@@ -115,7 +114,6 @@ public class Track {
             return (int) (mExtractor.getSampleTime() / 1000);
         }
         return 0;
-
     }
 
     public float getCurrentSpeed() {
@@ -157,7 +155,6 @@ public class Track {
         default:
             error();
         }
-
     }
 
     public void prepare() {
@@ -230,11 +227,9 @@ public class Track {
             mTrack.pause();
             mTrack.flush();
             break;
-
         default:
             error();
         }
-
     }
 
     public void start() {
@@ -244,8 +239,8 @@ public class Track {
             mCurrentState = STATE_STARTED;
             Log.d(SoundService.TAG_API, "State changed to STATE_STARTED");
             mContinue = true;
-            decode();
             mTrack.play();
+            decode();
         case STATE_STARTED:
             break;
         case STATE_PAUSED:
@@ -264,7 +259,6 @@ public class Track {
                         "Attempting to start while in idle after construction.  Not allowed by no callbacks called");
             }
         }
-
     }
 
     public void release() {
@@ -278,7 +272,6 @@ public class Track {
         seekCompleteCallback = null;
         speedAdjustmentAvailableChangedCallback = null;
         mCurrentState = STATE_END;
-
     }
 
     public void reset() {
@@ -309,15 +302,11 @@ public class Track {
             mTrack.release();
             mTrack = null;
         }
-        mFormat = null;
-
         mCurrentState = STATE_IDLE;
         Log.d(TAG_TRACK, "State changed to STATE_IDLE");
-
     }
 
     public void seekTo(final int msec) {
-
         switch (mCurrentState) {
         case STATE_PREPARED:
         case STATE_STARTED:
@@ -422,8 +411,6 @@ public class Track {
     public void initStream() {
         mExtractor = new MediaExtractor();
         if (mPath != null) {
-            // Map<String, String> hm = new HashMap<String, String>();
-            // hm.put("Content-Type", "audio/mpeg");
             mExtractor.setDataSource(mPath);
         } else if (mUri != null) {
             try {
@@ -433,26 +420,26 @@ public class Track {
                 error();
             }
         }
-        mFormat = mExtractor.getTrackFormat(TRACK_NUM);
 
-        int sampleRate = mFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE);
-        int channelCount = mFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
-        mDuration = mFormat.getLong(MediaFormat.KEY_DURATION);
+        final MediaFormat oFormat = mExtractor.getTrackFormat(TRACK_NUM);
+        int sampleRate = oFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE);
+        int channelCount = oFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
+        final String mime = oFormat.getString(MediaFormat.KEY_MIME);
+        mDuration = oFormat.getLong(MediaFormat.KEY_DURATION);
 
         Log.v(TAG_TRACK, "Sample rate: " + sampleRate);
-        initDevice(sampleRate, channelCount);
-
-        mExtractor.selectTrack(TRACK_NUM);
-        String mime = mFormat.getString(MediaFormat.KEY_MIME);
         Log.v(TAG_TRACK, "Mime type: " + mime);
-        mCodec = MediaCodec.createDecoderByType(mime);
 
-        mCodec.configure(mFormat, null, null, 0);
+        initDevice(sampleRate, channelCount);
+        mExtractor.selectTrack(TRACK_NUM);
+        mCodec = MediaCodec.createDecoderByType(mime);
+        mCodec.configure(oFormat, null, null, 0);
+
     }
 
     private void initDevice(int sampleRate, int numChannels) {
-        int format = findFormatFromChannels(numChannels);
-        int minSize = AudioTrack.getMinBufferSize(sampleRate, format,
+        final int format = findFormatFromChannels(numChannels);
+        final int minSize = AudioTrack.getMinBufferSize(sampleRate, format,
                 AudioFormat.ENCODING_PCM_16BIT);
         mTrack = new AudioTrack(AudioManager.STREAM_MUSIC, sampleRate, format,
                 AudioFormat.ENCODING_PCM_16BIT, minSize * 4,
@@ -482,8 +469,12 @@ public class Track {
                         }
                         continue;
                     }
-                    mSonic.setSpeed(mCurrentSpeed);
-                    mSonic.setPitch(mCurrentPitch);
+
+                    if (null != mSonic) {
+                        mSonic.setSpeed(mCurrentSpeed);
+                        mSonic.setPitch(mCurrentPitch);
+                    }
+
                     int inputBufIndex = mCodec.dequeueInputBuffer(200);
                     if (inputBufIndex >= 0) {
                         ByteBuffer dstBuf = inputBuffers[inputBufIndex];
@@ -507,24 +498,26 @@ public class Track {
                         }
                     }
 
-                    MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
-                    int res;
+                    final MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
+                    byte[] modifiedSamples = new byte[info.size];
 
+                    int res;
                     do {
                         res = mCodec.dequeueOutputBuffer(info, 200);
                         if (res >= 0) {
                             int outputBufIndex = res;
                             ByteBuffer buf = outputBuffers[outputBufIndex];
-
                             final byte[] chunk = new byte[info.size];
-                            buf.get(chunk);
-                            buf.clear();
+                            outputBuffers[res].get(chunk);
+                            outputBuffers[res].clear();
 
                             if (chunk.length > 0) {
                                 mSonic.putBytes(chunk, chunk.length);
                                 int available = mSonic.availableBytes();
                                 if (available > 0) {
-                                    final byte[] modifiedSamples = new byte[available];
+                                    if (modifiedSamples.length < available) {
+                                        modifiedSamples = new byte[available];
+                                    }
                                     mSonic.receiveBytes(modifiedSamples,
                                             available);
                                     mTrack.write(modifiedSamples, 0, available);
@@ -541,17 +534,17 @@ public class Track {
                             outputBuffers = mCodec.getOutputBuffers();
                             Log.d("PCM", "Output buffers changed");
                         } else if (res == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                            mTrack.stop();
+                            mTrack.release();
                             final MediaFormat oformat = mCodec
                                     .getOutputFormat();
+                            Log.d("PCM", "Output format has changed to"
+                                + oformat);
                             initDevice(
                                     oformat.getInteger(MediaFormat.KEY_SAMPLE_RATE),
                                     oformat.getInteger(MediaFormat.KEY_CHANNEL_COUNT));
-                            mTrack.stop();
-                            Log.d("PCM", "Output format has changed to"
-                                    + oformat);
                             outputBuffers = mCodec.getOutputBuffers();
                             mTrack.play();
-
                         }
                     } while (res == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED
                             || res == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED);
