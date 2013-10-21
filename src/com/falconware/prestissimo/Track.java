@@ -520,18 +520,18 @@ public class Track {
                             buf.get(chunk);
                             buf.clear();
 
-                            if (chunk.length > 0) {
+                            if (chunk.length > 0)
                                 mSonic.putBytes(chunk, chunk.length);
-                                int available = mSonic.availableBytes();
-                                if (available > 0) {
-                                    final byte[] modifiedSamples = new byte[available];
-                                    mSonic.receiveBytes(modifiedSamples,
-                                            available);
-                                    mTrack.write(modifiedSamples, 0, available);
-                                }
-                            } else {
+                            else
                                 mSonic.flush();
+
+                            int available = mSonic.availableBytes();
+                            if (available > 0) {
+                                final byte[] modifiedSamples = new byte[available];
+                                mSonic.receiveBytes(modifiedSamples,    available);
+                                mTrack.write(       modifiedSamples, 0, available);
                             }
+
                             mCodec.releaseOutputBuffer(outputBufIndex, false);
 
                             if ((info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
