@@ -14,6 +14,12 @@
 
 package com.falconware.prestissimo;
 
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.util.concurrent.locks.ReentrantLock;
+
+import org.vinuxproject.sonic.Sonic;
+
 import android.content.Context;
 import android.media.AudioFormat;
 import android.media.AudioManager;
@@ -35,12 +41,6 @@ import com.aocate.presto.service.IOnPitchAdjustmentAvailableChangedListenerCallb
 import com.aocate.presto.service.IOnPreparedListenerCallback_0_8;
 import com.aocate.presto.service.IOnSeekCompleteListenerCallback_0_8;
 import com.aocate.presto.service.IOnSpeedAdjustmentAvailableChangedListenerCallback_0_8;
-
-import org.vinuxproject.sonic.Sonic;
-
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.util.concurrent.locks.ReentrantLock;
 
 public class Track {
     private AudioTrack mTrack;
@@ -85,7 +85,7 @@ public class Track {
 
     // Don't know how to persist this other than pass it in and 'hold' it
     private final IDeathCallback_0_8 mDeath;
-	final ReentrantLock lock;
+    final ReentrantLock lock;
 
     public Track(Context context, IDeathCallback_0_8 cb) {
         mCurrentState = STATE_IDLE;
@@ -374,7 +374,7 @@ public class Track {
     }
 
     public void setVolume(float left, float right) {
-         // Pass call directly to AudioTrack if available.
+        // Pass call directly to AudioTrack if available.
         if (null != mTrack) {
             mTrack.setStereoVolume(left, right);
         }
@@ -513,18 +513,18 @@ public class Track {
 
                             if (chunk.length > 0) {
                                 mSonic.putBytes(chunk, chunk.length);
-                                int available = mSonic.availableBytes();
-                                if (available > 0) {
-                                    if (modifiedSamples.length < available) {
-                                        modifiedSamples = new byte[available];
-                                    }
-                                    mSonic.receiveBytes(modifiedSamples,
-                                            available);
-                                    mTrack.write(modifiedSamples, 0, available);
-                                }
                             } else {
                                 mSonic.flush();
                             }
+                            int available = mSonic.availableBytes();
+                            if (available > 0) {
+                                if (modifiedSamples.length < available) {
+                                    modifiedSamples = new byte[available];
+                                }
+                                mSonic.receiveBytes(modifiedSamples, available);
+                                mTrack.write(modifiedSamples, 0, available);
+                            }
+
                             mCodec.releaseOutputBuffer(outputBufIndex, false);
 
                             if ((info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
@@ -539,7 +539,7 @@ public class Track {
                             final MediaFormat oformat = mCodec
                                     .getOutputFormat();
                             Log.d("PCM", "Output format has changed to"
-                                + oformat);
+                                    + oformat);
                             initDevice(
                                     oformat.getInteger(MediaFormat.KEY_SAMPLE_RATE),
                                     oformat.getInteger(MediaFormat.KEY_CHANNEL_COUNT));
