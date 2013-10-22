@@ -50,6 +50,7 @@ public class Track {
     private Thread mDecoderThread;
     private String mPath;
     private Uri mUri;
+    private final ReentrantLock mLock;
     private boolean mContinue;
     private boolean mIsDecoding;
     private long mDuration;
@@ -85,7 +86,6 @@ public class Track {
 
     // Don't know how to persist this other than pass it in and 'hold' it
     private final IDeathCallback_0_8 mDeath;
-    final ReentrantLock lock;
 
     public Track(Context context, IDeathCallback_0_8 cb) {
         mCurrentState = STATE_IDLE;
@@ -97,7 +97,7 @@ public class Track {
         mDeath = cb;
         mPath = null;
         mUri = null;
-        lock = new ReentrantLock();
+        mLock = new ReentrantLock();
     }
 
     // TODO: This probably isn't right...
@@ -275,13 +275,14 @@ public class Track {
     }
 
     public void reset() {
+        mLock.lock();
         mContinue = false;
         try {
             if (mDecoderThread != null
                     && mCurrentState != STATE_PLAYBACK_COMPLETED) {
                 mDecoderThread.interrupt();
                 while (mIsDecoding) {
-                    Thread.sleep(50);
+                    Thread.sleep(1);
                 }
             }
         } catch (InterruptedException e) {
@@ -304,6 +305,7 @@ public class Track {
         }
         mCurrentState = STATE_IDLE;
         Log.d(TAG_TRACK, "State changed to STATE_IDLE");
+        mLock.unlock();
     }
 
     public void seekTo(final int msec) {
@@ -315,7 +317,7 @@ public class Track {
             Thread t = new Thread(new Runnable() {
                 @Override
                 public void run() {
-                    lock.lock();
+                    mLock.lock();
                     if (mTrack == null) {
                         return;
                     }
@@ -330,7 +332,7 @@ public class Track {
                                 "Received RemoteException trying to call onSeekComplete in seekTo",
                                 e);
                     }
-                    lock.unlock();
+                    mLock.unlock();
                 }
             });
             t.setDaemon(true);
@@ -409,6 +411,7 @@ public class Track {
     }
 
     public void initStream() {
+        mLock.lock();
         mExtractor = new MediaExtractor();
         if (mPath != null) {
             mExtractor.setDataSource(mPath);
@@ -434,10 +437,11 @@ public class Track {
         mExtractor.selectTrack(TRACK_NUM);
         mCodec = MediaCodec.createDecoderByType(mime);
         mCodec.configure(oFormat, null, null, 0);
-
+        mLock.unlock();
     }
 
     private void initDevice(int sampleRate, int numChannels) {
+        mLock.lock();
         final int format = findFormatFromChannels(numChannels);
         final int minSize = AudioTrack.getMinBufferSize(sampleRate, format,
                 AudioFormat.ENCODING_PCM_16BIT);
@@ -445,6 +449,7 @@ public class Track {
                 AudioFormat.ENCODING_PCM_16BIT, minSize * 4,
                 AudioTrack.MODE_STREAM);
         mSonic = new Sonic(sampleRate, numChannels);
+        mLock.unlock();
     }
 
     public void decode() {
@@ -561,23 +566,30 @@ public class Track {
                 Log.d(TAG_TRACK,
                         "Current position: "
                                 + (int) (mExtractor.getSampleTime() / 1000));
+                mIsDecoding = false;
                 if (mContinue && (sawInputEOS || sawOutputEOS)) {
                     mCurrentState = STATE_PLAYBACK_COMPLETED;
-                    try {
-                        completionCallback.onCompletion();
-                    } catch (RemoteException e) {
-                        // Binder should handle our death
-                        Log.e(TAG_TRACK,
-                                "RemoteException trying to call onCompletion after decoding",
-                                e);
-                    }
+                    Thread t = new Thread(new Runnable() {
+                        @Override
+                        public void run() {
+                            try {
+                                completionCallback.onCompletion();
+                            } catch (RemoteException e) {
+                                // Binder should handle our death
+                                Log.e(TAG_TRACK,
+                                        "RemoteException trying to call onCompletion after decoding",
+                                        e);
+                            }
+                        }
+                    });
+                    t.setDaemon(true);
+                    t.start();
                 } else {
                     Log.d(TAG_TRACK,
                             "Loop ended before saw input eos or output eos");
                     Log.d(TAG_TRACK, "sawInputEOS: " + sawInputEOS);
                     Log.d(TAG_TRACK, "sawOutputEOS: " + sawOutputEOS);
                 }
-                mIsDecoding = false;
             }
         });
         mDecoderThread.setDaemon(true);
