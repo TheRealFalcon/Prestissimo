@@ -5,3 +5,5 @@ gen
 project.properties
 out
 *.iml
+local.properties
+.gradle
