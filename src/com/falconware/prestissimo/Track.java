@@ -540,6 +540,7 @@ public class Track {
                             Log.d("PCM", "Output buffers changed");
                         } else if (res == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
                             mTrack.stop();
+                            mLock.lock();
                             mTrack.release();
                             final MediaFormat oformat = mCodec
                                     .getOutputFormat();
@@ -550,6 +551,7 @@ public class Track {
                                     oformat.getInteger(MediaFormat.KEY_CHANNEL_COUNT));
                             outputBuffers = mCodec.getOutputBuffers();
                             mTrack.play();
+                            mLock.unlock();
                         }
                     } while (res == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED
                             || res == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED);
