@@ -12,10 +12,8 @@ to control playback speed.
 
 
 ## Current limitations/issues
-* Android 4.1+ (Jellybean) only
-* Only support the Sonic speed adjustment library (no WSOLA).
-* Preferences are hardcoded
-* Error callback codes won't be descriptive or helpful
+* Android 4.1+
+* Error callback codes aren't helpful in most cases
 
 ## Developers
 If you're interested in contributing to Prestissimo, great! Some notes to help get you started: <br/>
