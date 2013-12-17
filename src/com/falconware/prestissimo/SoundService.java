@@ -90,13 +90,19 @@ public class SoundService extends Service {
 
         @Override
         public float getCurrentPitchStepsAdjustment(long sessionId) {
-            Track track = mTracks.get((int) sessionId);
+            Track track;
+            synchronized (this) {
+                track = mTracks.get((int) sessionId);
+            }
             return track.getCurrentPitchStepsAdjustment();
         }
 
         @Override
         public int getCurrentPosition(long sessionId) {
-            Track track = mTracks.get((int) sessionId);
+            Track track;
+            synchronized (this) {
+                track = mTracks.get((int) sessionId);
+            }
             return track.getCurrentPosition();
         }
 
@@ -108,7 +114,10 @@ public class SoundService extends Service {
 
         @Override
         public int getDuration(long sessionId) {
-            Track track = mTracks.get((int) sessionId);
+            Track track;
+            synchronized (this) {
+                track = mTracks.get((int) sessionId);
+            }
             return track.getDuration();
         }
 
@@ -140,14 +149,20 @@ public class SoundService extends Service {
 
         @Override
         public boolean isPlaying(long sessionId) {
-            Track track = mTracks.get((int) sessionId);
+            Track track;
+            synchronized (this) {
+                track = mTracks.get((int) sessionId);
+            }
             return track.isPlaying();
         }
 
         @Override
         public void pause(long sessionId) {
             Log.d(TAG_API, "Session: " + sessionId + ". Pause called");
-            Track track = mTracks.get((int) sessionId);
+            Track track;
+            synchronized (this) {
+                track = mTracks.get((int) sessionId);
+            }
             track.pause();
 
         }
@@ -155,14 +170,20 @@ public class SoundService extends Service {
         @Override
         public void prepare(long sessionId) {
             Log.d(TAG_API, "Session: " + sessionId + ". Prepare called");
-            Track track = mTracks.get((int) sessionId);
+            Track track;
+            synchronized (this) {
+                track = mTracks.get((int) sessionId);
+            }
             track.prepare();
 
         }
 
         @Override
         public void prepareAsync(long sessionId) {
-            Track track = mTracks.get((int) sessionId);
+            Track track;
+            synchronized (this) {
+                track = mTracks.get((int) sessionId);
+            }
             Log.d(TAG_API, "Session: " + sessionId + ". PrepareAsync called");
             track.prepareAsync();
         }
@@ -170,28 +191,40 @@ public class SoundService extends Service {
         @Override
         public void registerOnBufferingUpdateCallback(long sessionId,
                 IOnBufferingUpdateListenerCallback_0_8 cb) {
-            Track track = mTracks.get((int) sessionId);
+            Track track;
+            synchronized (this) {
+                track = mTracks.get((int) sessionId);
+            }
             track.bufferingUpdateCallback = cb;
         }
 
         @Override
         public void registerOnCompletionCallback(long sessionId,
                 IOnCompletionListenerCallback_0_8 cb) {
-            Track track = mTracks.get((int) sessionId);
+            Track track;
+            synchronized (this) {
+                track = mTracks.get((int) sessionId);
+            }
             track.completionCallback = cb;
         }
 
         @Override
         public void registerOnErrorCallback(long sessionId,
                 IOnErrorListenerCallback_0_8 cb) {
-            Track track = mTracks.get((int) sessionId);
+            Track track;
+            synchronized (this) {
+                track = mTracks.get((int) sessionId);
+            }
             track.errorCallback = cb;
         }
 
         @Override
         public void registerOnInfoCallback(long sessionId,
                 IOnInfoListenerCallback_0_8 cb) {
-            Track track = mTracks.get((int) sessionId);
+            Track track;
+            synchronized (this) {
+                track = mTracks.get((int) sessionId);
+            }
             track.infoCallback = cb;
         }
 
@@ -199,21 +232,30 @@ public class SoundService extends Service {
         public void registerOnPitchAdjustmentAvailableChangedCallback(
                 long sessionId,
                 IOnPitchAdjustmentAvailableChangedListenerCallback_0_8 cb) {
-            Track track = mTracks.get((int) sessionId);
+            Track track;
+            synchronized (this) {
+                track = mTracks.get((int) sessionId);
+            }
             track.pitchAdjustmentAvailableChangedCallback = cb;
         }
 
         @Override
         public void registerOnPreparedCallback(long sessionId,
                 IOnPreparedListenerCallback_0_8 cb) {
-            Track track = mTracks.get((int) sessionId);
+            Track track;
+            synchronized (this) {
+                track = mTracks.get((int) sessionId);
+            }
             track.preparedCallback = cb;
         }
 
         @Override
         public void registerOnSeekCompleteCallback(long sessionId,
                 IOnSeekCompleteListenerCallback_0_8 cb) {
-            Track track = mTracks.get((int) sessionId);
+            Track track;
+            synchronized (this) {
+                track = mTracks.get((int) sessionId);
+            }
             track.seekCompleteCallback = cb;
         }
 
@@ -221,14 +263,19 @@ public class SoundService extends Service {
         public void registerOnSpeedAdjustmentAvailableChangedCallback(
                 long sessionId,
                 IOnSpeedAdjustmentAvailableChangedListenerCallback_0_8 cb) {
-            Track track = mTracks.get((int) sessionId);
+            Track track;
+            synchronized (this) {
+                track = mTracks.get((int) sessionId);
+            }
             track.speedAdjustmentAvailableChangedCallback = cb;
         }
 
         @Override
         public void release(long sessionId) {
             Log.d(TAG_API, "Session: " + sessionId + ". Release called");
-            removeTrack((int)sessionId);
+            synchronized (this) {
+                removeTrack((int) sessionId);
+            }
             Log.d(TAG_API, "Session: " + sessionId
                     + ". State changed to Track.STATE_END");
         }
@@ -236,7 +283,10 @@ public class SoundService extends Service {
         @Override
         public void reset(long sessionId) {
             Log.d(TAG_API, "Session: " + sessionId + ". Reset called");
-            Track track = mTracks.get((int) sessionId);
+            Track track;
+            synchronized (this) {
+                track = mTracks.get((int) sessionId);
+            }
             track.reset();
             Log.d(TAG_API, "Session: " + sessionId + ". End of reset");
         }
@@ -244,7 +294,10 @@ public class SoundService extends Service {
         @Override
         public void seekTo(long sessionId, final int msec) {
             Log.d(TAG_API, "Session: " + sessionId + ". SeekTo called");
-            Track track = mTracks.get((int) sessionId);
+            Track track;
+            synchronized (this) {
+                track = mTracks.get((int) sessionId);
+            }
             track.seekTo(msec);
             Log.d(TAG_API, "Session: " + sessionId + ". SeekTo done");
 
@@ -259,14 +312,20 @@ public class SoundService extends Service {
         public void setDataSourceString(long sessionId, String path) {
             Log.d(TAG_API, "Session: " + sessionId
                     + ". SetDataSourceString called");
-            Track track = mTracks.get((int) sessionId);
+            Track track;
+            synchronized (this) {
+                track = mTracks.get((int) sessionId);
+            }
             track.setDataSourceString(path);
 
         }
 
         @Override
         public void setDataSourceUri(long sessionId, Uri uri) {
-            Track track = mTracks.get((int) sessionId);
+            Track track;
+            synchronized (this) {
+                track = mTracks.get((int) sessionId);
+            }
             Log.d(TAG_API, "Session: " + sessionId
                     + ". setDataSourceUri called");
             track.setDataSourceUri(uri);
@@ -290,13 +349,19 @@ public class SoundService extends Service {
 
         @Override
         public void setPlaybackPitch(long sessionId, float f) {
-            Track track = mTracks.get((int) sessionId);
+            Track track;
+            synchronized (this) {
+                track = mTracks.get((int) sessionId);
+            }
             track.setPlaybackPitch(f);
         }
 
         @Override
         public void setPlaybackSpeed(long sessionId, float f) {
-            Track track = mTracks.get((int) sessionId);
+            Track track;
+            synchronized (this) {
+                track = mTracks.get((int) sessionId);
+            }
             track.setPlaybackSpeed(f);
         }
 
@@ -308,10 +373,14 @@ public class SoundService extends Service {
         @Override
         public void setVolume(long sessionId, float left, float right) {
             // The IPlayMedia_0_8.Stub defines this method but the presto client
-            // never actually calls it. ortylp provided a reasonable implementation
-            // just in case.
-            Log.d(TAG_API, "Session: " + sessionId + ". Set volume to ("+left+", "+right+")");
-            Track track = mTracks.get((int) sessionId);
+            // never actually calls it. ortylp provided a reasonable
+            // implementation just in case.
+            Log.d(TAG_API, "Session: " + sessionId + ". Set volume to (" + left
+                    + ", " + right + ")");
+            Track track;
+            synchronized (this) {
+                track = mTracks.get((int) sessionId);
+            }
             if (null != track) {
                 track.setVolume(left, right);
             }
@@ -320,7 +389,10 @@ public class SoundService extends Service {
         @Override
         public void start(long sessionId) {
             Log.d(TAG_API, "Session: " + sessionId + ". Start called");
-            Track track = mTracks.get((int) sessionId);
+            Track track;
+            synchronized (this) {
+                track = mTracks.get((int) sessionId);
+            }
             track.start();
             Log.d(TAG_API, "Session: " + sessionId + ". Start done");
         }
@@ -348,14 +420,19 @@ public class SoundService extends Service {
             // track since it never actually gets called or used by the track.
             // However, unless we 'do' something with it, cb will be a candidate
             // for garbage collection after this method pops
-            mTracks.append(sessionId, new Track(SoundService.this, cb));
+            synchronized (this) {
+                mTracks.append(sessionId, new Track(SoundService.this, cb));
+            }
             return sessionId;
         }
 
         @Override
         public void stop(long sessionId) {
             Log.d(TAG_API, "Session: " + sessionId + ". Stop called");
-            Track track = mTracks.get((int) sessionId);
+            Track track;
+            synchronized (this) {
+                track = mTracks.get((int) sessionId);
+            }
             track.stop();
             Log.d(TAG_API, "Session: " + sessionId + ". Stop done");
         }

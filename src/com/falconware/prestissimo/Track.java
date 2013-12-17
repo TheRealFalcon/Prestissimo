@@ -51,6 +51,7 @@ public class Track {
     private String mPath;
     private Uri mUri;
     private final ReentrantLock mLock;
+    private final Object mDecoderLock;
     private boolean mContinue;
     private boolean mIsDecoding;
     private long mDuration;
@@ -72,6 +73,10 @@ public class Track {
     private final static int STATE_PLAYBACK_COMPLETED = 7;
     private final static int STATE_END = 8;
     private final static int STATE_ERROR = 9;
+
+    // Not available in API 16 :(
+    private final static int MEDIA_ERROR_MALFORMED = 0xfffffc11;
+    private final static int MEDIA_ERROR_IO = 0xfffffc14;
 
     // The aidl interface should automatically implement stubs for these, so
     // don't initialize or require null checks.
@@ -98,6 +103,7 @@ public class Track {
         mPath = null;
         mUri = null;
         mLock = new ReentrantLock();
+        mDecoderLock = new Object();
     }
 
     // TODO: This probably isn't right...
@@ -161,7 +167,13 @@ public class Track {
         switch (mCurrentState) {
         case STATE_INITIALIZED:
         case STATE_STOPPED:
-            initStream();
+            try {
+                initStream();
+            } catch (IOException e) {
+                Log.e(TAG_TRACK, "Failed setting data source!", e);
+                error();
+                return;
+            }
             mCurrentState = STATE_PREPARED;
             Log.d(TAG_TRACK, "State changed to STATE_PREPARED");
             try {
@@ -188,7 +200,13 @@ public class Track {
 
                 @Override
                 public void run() {
-                    initStream();
+                    try {
+                        initStream();
+                    } catch (IOException e) {
+                        Log.e(TAG_TRACK, "Failed setting data source!", e);
+                        error();
+                        return;
+                    }
                     if (mCurrentState != STATE_ERROR) {
                         mCurrentState = STATE_PREPARED;
                         Log.d(TAG_TRACK, "State changed to STATE_PREPARED");
@@ -245,8 +263,10 @@ public class Track {
             break;
         case STATE_PAUSED:
             mCurrentState = STATE_STARTED;
-            Log.d(SoundService.TAG_API, "State changed to STATE_PAUSED");
-            mDecoderThread.interrupt();
+            Log.d(SoundService.TAG_API, "State changed to STATE_STARTED");
+            synchronized (mDecoderLock) {
+                mDecoderLock.notify();
+            }
             mTrack.play();
             break;
         default:
@@ -280,13 +300,14 @@ public class Track {
         try {
             if (mDecoderThread != null
                     && mCurrentState != STATE_PLAYBACK_COMPLETED) {
-                mDecoderThread.interrupt();
                 while (mIsDecoding) {
-                    Thread.sleep(1);
+                    synchronized (mDecoderLock) {
+                        mDecoderLock.notify();
+                        mDecoderLock.wait();
+                    }
                 }
             }
         } catch (InterruptedException e) {
-            // WTF is happening?
             Log.e(TAG_TRACK,
                     "Interrupted in reset while waiting for decoder thread to stop.",
                     e);
@@ -383,11 +404,15 @@ public class Track {
     }
 
     public void error() {
+        error(0);
+    }
+
+    public void error(int extra) {
         Log.e(TAG_TRACK, "Moved to error state!");
         mCurrentState = STATE_ERROR;
         try {
             boolean handled = errorCallback.onError(
-                    MediaPlayer.MEDIA_ERROR_UNKNOWN, 0);
+                    MediaPlayer.MEDIA_ERROR_UNKNOWN, extra);
             if (!handled) {
                 completionCallback.onCompletion();
             }
@@ -410,18 +435,15 @@ public class Track {
         }
     }
 
-    public void initStream() {
+    public void initStream() throws IOException {
         mLock.lock();
         mExtractor = new MediaExtractor();
         if (mPath != null) {
             mExtractor.setDataSource(mPath);
         } else if (mUri != null) {
-            try {
-                mExtractor.setDataSource(mContext, mUri, null);
-            } catch (IOException e) {
-                Log.e(TAG_TRACK, "Failed setting data source!", e);
-                error();
-            }
+            mExtractor.setDataSource(mContext, mUri, null);
+        } else {
+            throw new IOException();
         }
 
         final MediaFormat oFormat = mExtractor.getTrackFormat(TRACK_NUM);
@@ -467,8 +489,12 @@ public class Track {
 
                 while (!sawInputEOS && !sawOutputEOS && mContinue) {
                     if (mCurrentState == STATE_PAUSED) {
+                        System.out.println("Decoder changed to PAUSED");
                         try {
-                            Thread.sleep(99999999);
+                            synchronized (mDecoderLock) {
+                                mDecoderLock.wait();
+                                System.out.println("Done with wait");
+                            }
                         } catch (InterruptedException e) {
                             // Purposely not doing anything here
                         }
@@ -591,6 +617,9 @@ public class Track {
                             "Loop ended before saw input eos or output eos");
                     Log.d(TAG_TRACK, "sawInputEOS: " + sawInputEOS);
                     Log.d(TAG_TRACK, "sawOutputEOS: " + sawOutputEOS);
+                }
+                synchronized (mDecoderLock) {
+                    mDecoderLock.notifyAll();
                 }
             }
         });
