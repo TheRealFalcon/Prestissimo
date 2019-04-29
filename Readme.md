@@ -1,7 +1,7 @@
-#As of Android 6.0, this library is deprecated. Use PlaybackParams instead.
+# As of Android 6.0, this library is deprecated. Use PlaybackParams instead.
 https://developer.android.com/reference/android/media/PlaybackParams.html
 
-#Prestissimo
+# Prestissimo
 
 Prestissimo adds variable speed playback functionality to your audio applications.  It is a free drop-in replacement for the Presto Sound Library Open Beta.
 
